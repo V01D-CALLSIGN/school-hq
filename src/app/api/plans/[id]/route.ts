@@ -1,6 +1,7 @@
 import { studyPlanSchema, success, updatePlanInputSchema, uuidSchema, type PlanBlock, type StudyPlan } from "@/lib/contracts";
 import { requireAuth } from "@/lib/server/auth";
-import { assertDb, camelize } from "@/lib/server/db";
+import { assertDb, camelize, snakeize } from "@/lib/server/db";
+import { validatePlanBlockEdits } from "@/lib/plans/validation";
 import { readJson, toErrorResponse } from "@/lib/server/errors";
 
 type Context = { params: Promise<{ id: string }> };
@@ -23,10 +24,19 @@ export async function PATCH(request: Request, context: Context): Promise<Respons
     const { supabase } = await requireAuth(request);
     const id = uuidSchema.parse((await context.params).id);
     const input = updatePlanInputSchema.parse(await readJson(request));
-    if (input.status) assertDb(await supabase.from("study_plans").update({ status: input.status }).eq("id", id).select("id").single());
-    for (const block of input.blocks ?? []) {
-      assertDb(await supabase.from("plan_blocks").update({ locked: block.locked }).eq("study_plan_id", id).eq("id", block.id).select("id").single());
-    }
+    const [planResult, blocksResult] = await Promise.all([
+      supabase.from("study_plans").select("*").eq("id", id).single(),
+      supabase.from("plan_blocks").select("*").eq("study_plan_id", id),
+    ]);
+    const plan = camelize<StudyPlan>(assertDb(planResult));
+    const blocks = camelize<PlanBlock[]>(assertDb(blocksResult));
+    validatePlanBlockEdits(plan, blocks, input.blocks ?? []);
+    const result = await supabase.rpc("apply_plan_edits", {
+      p_plan_id: id,
+      p_status: input.status ?? null,
+      p_blocks: (input.blocks ?? []).map((block) => snakeize(block)),
+    });
+    assertDb({ data: true, error: result.error });
     return GET(request, { params: Promise.resolve({ id }) });
   } catch (error) { return toErrorResponse(error); }
 }

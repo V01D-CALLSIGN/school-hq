@@ -10,7 +10,7 @@ export async function GET(request: Request): Promise<Response> {
     let query = supabase.from("study_windows").select("*").order("starts_at");
     if (url.searchParams.get("from")) query = query.gte("ends_at", url.searchParams.get("from")!);
     if (url.searchParams.get("to")) query = query.lte("starts_at", url.searchParams.get("to")!);
-    return success(camelize<StudyWindow[]>(assertDb(await query)));
+    return success(studyWindowSchema.array().parse(camelize<StudyWindow[]>(assertDb(await query))));
   } catch (error) { return toErrorResponse(error); }
 }
 

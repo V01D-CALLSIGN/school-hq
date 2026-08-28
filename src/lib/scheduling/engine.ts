@@ -1,7 +1,7 @@
 import { DateTime, Interval } from "luxon";
-import type { Assignment, CalendarEvent, PlanBlock, SchedulingPreferences, StudyWindow, UnscheduledTask } from "@/lib/contracts";
+import type { Area, Assignment, CalendarEvent, PlanBlock, SchedulingPreferences, StudyWindow, UnscheduledTask } from "@/lib/contracts";
 
-type EngineAssignment = Pick<Assignment, "id" | "dueAt" | "estimatedMinutes" | "priority" | "dependencyIds" | "status">;
+type EngineAssignment = Pick<Assignment, "id" | "area" | "dueAt" | "estimatedMinutes" | "priority" | "dependencyIds" | "status">;
 type EngineWindow = Pick<StudyWindow, "startsAt" | "endsAt">;
 type EngineBusy = Pick<CalendarEvent, "startsAt" | "endsAt" | "classification">;
 type EngineLocked = Pick<PlanBlock, "id" | "studyPlanId" | "assignmentId" | "startsAt" | "endsAt" | "locked" | "kind" | "sequence">;
@@ -15,6 +15,7 @@ export type SchedulingInput = {
   rangeStart: string;
   rangeEnd: string;
   planId: string;
+  area?: Area;
 };
 
 export type SchedulingResult = { blocks: PlanBlock[]; unscheduledTasks: UnscheduledTask[] };
@@ -99,8 +100,9 @@ export function generateSchedule(input: SchedulingInput): SchedulingResult {
     ...input.lockedBlocks,
   ].map((item) => ({ start: Date.parse(item.startsAt), end: Date.parse(item.endsAt) }));
   const slots = subtract(windows, blocked).filter((slot) => slot.end - slot.start >= input.preferences.minimumSessionMinutes * 60_000);
-  const ranks = topologicalRank(input.assignments);
-  const assignments = input.assignments.filter((item) => !["completed", "archived", "pending_review"].includes(item.status)).sort((a, b) => {
+  const selectedAssignments = input.area ? input.assignments.filter((item) => item.area === input.area) : input.assignments;
+  const ranks = topologicalRank(selectedAssignments);
+  const assignments = selectedAssignments.filter((item) => !["completed", "archived", "pending_review"].includes(item.status)).sort((a, b) => {
     const rankDifference = (ranks.get(a.id) ?? 0) - (ranks.get(b.id) ?? 0);
     if (rankDifference) return rankDifference;
     const aDue = a.dueAt ? Date.parse(a.dueAt) : Number.MAX_SAFE_INTEGER;

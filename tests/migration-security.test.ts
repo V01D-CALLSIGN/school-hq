@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const sql = readFileSync(fileURLToPath(new URL("../supabase/migrations/202608280001_initial_schema.sql", import.meta.url)), "utf8");
+const areaMigration = readFileSync(fileURLToPath(new URL("../supabase/migrations/202608280002_work_areas_and_plan_edits.sql", import.meta.url)), "utf8");
 const userTables = ["profiles", "courses", "assignments", "brain_dumps", "calendar_imports", "calendar_events", "study_windows", "study_plans", "plan_blocks", "focus_sessions", "scheduling_preferences"];
 
 describe("migration security declarations", () => {
@@ -22,5 +23,20 @@ describe("migration security declarations", () => {
     expect(sql).toContain("function public.replace_calendar_events");
     expect(sql).toContain("security invoker");
     expect(sql).toContain("grant execute on function public.replace_calendar_events(uuid, jsonb) to authenticated");
+  });
+
+  it("adds work areas in a new migration with safe defaults", () => {
+    expect(sql).not.toContain("work_area");
+    expect(areaMigration).toContain("create type public.work_area as enum ('school', 'extracurricular')");
+    expect(areaMigration.match(/area public\.work_area not null default 'school'/g)).toHaveLength(2);
+    expect(areaMigration).toContain("area_filter text not null default 'combined'");
+  });
+
+  it("enforces assignment metadata and plan-block collision behavior in the database", () => {
+    expect(areaMigration).toContain("assignments_area_metadata_check");
+    expect(areaMigration).toContain("plan_blocks_no_overlap");
+    expect(areaMigration).toContain("deferrable initially deferred");
+    expect(areaMigration).toContain("function public.apply_plan_edits");
+    expect(areaMigration).toContain("security invoker");
   });
 });

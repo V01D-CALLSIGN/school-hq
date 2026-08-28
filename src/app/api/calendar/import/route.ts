@@ -1,4 +1,4 @@
-import { calendarClassificationSchema, success, type CalendarEvent, type CalendarImport } from "@/lib/contracts";
+import { areaSchema, calendarClassificationSchema, calendarEventSchema, calendarImportSchema, success, type CalendarEvent, type CalendarImport } from "@/lib/contracts";
 import { hashCalendarSource, MAX_ICS_BYTES, parseCalendar } from "@/lib/calendar/parser";
 import { requireAuth } from "@/lib/server/auth";
 import { assertDb, camelize } from "@/lib/server/db";
@@ -18,9 +18,10 @@ export async function POST(request: Request): Promise<Response> {
     if (file.name.length > 200) throw new HttpError(422, "INVALID_FILE", "Calendar filename is too long");
     if (file.size > MAX_ICS_BYTES) throw new HttpError(413, "CALENDAR_TOO_LARGE", "Calendar file exceeds 1 MB");
     const classification = calendarClassificationSchema.parse(form.get("classification") ?? "busy");
+    const area = areaSchema.parse(form.get("area") ?? "school");
     const content = await file.text();
     const sourceHash = hashCalendarSource(content);
-    const parsed = parseCalendar(content).map((event) => ({ ...event, classification }));
+    const parsed = parseCalendar(content).map((event) => ({ ...event, classification, area }));
     const importRow = assertDb<Record<string, unknown> & { id: string }>(await supabase.from("calendar_imports").upsert({
       user_id: user.id, source_name: file.name, source_hash: sourceHash, event_count: parsed.length, imported_at: new Date().toISOString(),
     }, { onConflict: "user_id,source_name" }).select().single());
@@ -29,9 +30,12 @@ export async function POST(request: Request): Promise<Response> {
       source_uid: event.sourceUid,
       recurrence_id: event.recurrenceId ?? "", title: event.title, description: event.description,
       location: event.location, starts_at: event.startsAt, ends_at: event.endsAt,
-      all_day: event.allDay, classification: event.classification, original_timezone: event.originalTimezone,
+      all_day: event.allDay, classification: event.classification, area: event.area, original_timezone: event.originalTimezone,
     }));
     const events = assertDb(await supabase.rpc("replace_calendar_events", { p_import_id: importId, p_events: rows }));
-    return success({ import: camelize<CalendarImport>(importRow), events: camelize<CalendarEvent[]>(events) }, { status: 201 });
+    const eventDtos = camelize<CalendarEvent[]>(events).map((event) => calendarEventSchema.parse({
+      ...event, recurrenceId: event.recurrenceId || null,
+    }));
+    return success({ import: calendarImportSchema.parse(camelize<CalendarImport>(importRow)), events: eventDtos }, { status: 201 });
   } catch (error) { return toErrorResponse(error); }
 }

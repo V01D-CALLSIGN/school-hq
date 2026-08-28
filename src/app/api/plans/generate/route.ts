@@ -5,7 +5,7 @@ import {
 } from "@/lib/contracts";
 import { generateSchedule } from "@/lib/scheduling/engine";
 import { requireAuth } from "@/lib/server/auth";
-import { assertDb, camelize } from "@/lib/server/db";
+import { assertDb, camelize, normalizePreferences } from "@/lib/server/db";
 import { readJson, toErrorResponse } from "@/lib/server/errors";
 
 export const runtime = "nodejs";
@@ -14,8 +14,10 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const { user, supabase } = await requireAuth(request);
     const input = generatePlanInputSchema.parse(await readJson(request));
+    let assignmentsQuery = supabase.from("assignments").select("*").in("status", ["confirmed", "in_progress"]);
+    if (input.area) assignmentsQuery = assignmentsQuery.eq("area", input.area);
     const [assignmentsResult, windowsResult, eventsResult, lockedResult, preferencesResult] = await Promise.all([
-      supabase.from("assignments").select("*").in("status", ["confirmed", "in_progress"]),
+      assignmentsQuery,
       supabase.from("study_windows").select("*").lt("starts_at", input.rangeEnd).gt("ends_at", input.rangeStart),
       supabase.from("calendar_events").select("*").neq("classification", "ignored").lt("starts_at", input.rangeEnd).gt("ends_at", input.rangeStart),
       supabase.from("plan_blocks").select("*").eq("locked", true).lt("starts_at", input.rangeEnd).gt("ends_at", input.rangeStart),
@@ -29,12 +31,12 @@ export async function POST(request: Request): Promise<Response> {
       ...calendarEvents.filter((event) => event.classification === "study_available").map((event) => ({ startsAt: event.startsAt, endsAt: event.endsAt })),
     ];
     const lockedBlocks = camelize<PlanBlock[]>(assertDb(lockedResult));
-    const preferences = schedulingPreferencesSchema.parse({ ...camelize<Record<string, unknown>>(assertDb(preferencesResult)), timezone: input.timezone });
+    const preferences = schedulingPreferencesSchema.parse({ ...normalizePreferences<Record<string, unknown>>(assertDb(preferencesResult)), timezone: input.timezone });
     const planId = randomUUID();
     const generated = generateSchedule({ assignments, studyWindows: effectiveWindows, calendarEvents, lockedBlocks, preferences, ...input, planId });
     const planRow = assertDb(await supabase.from("study_plans").insert({
       id: planId, user_id: user.id, range_start: input.rangeStart, range_end: input.rangeEnd,
-      timezone: input.timezone, status: "draft", unscheduled_tasks: generated.unscheduledTasks,
+      timezone: input.timezone, area_filter: input.area ?? "combined", status: "draft", unscheduled_tasks: generated.unscheduledTasks,
     }).select().single());
     try {
       const newBlocks = generated.blocks.filter((block) => !block.locked).map((block) => ({

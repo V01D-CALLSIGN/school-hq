@@ -8,7 +8,19 @@ describe("mock brain dump parser", () => {
     const first = await parser.parse({ text: "Calculus problem set due 2026-09-02 17:00 2 hours", timezone: "America/Chicago", courseContext: [{ name: "Calculus" }] });
     const second = await parser.parse({ text: "Calculus problem set due 2026-09-02 17:00 2 hours", timezone: "America/Chicago", courseContext: [{ name: "Calculus" }] });
     expect(first).toEqual(second);
-    expect(first[0]).toMatchObject({ course: "Calculus", dueAt: "2026-09-02T22:00:00.000Z", estimatedMinutes: 120 });
+    expect(first[0]).toMatchObject({ area: "school", areaConfidence: 0.95, course: "Calculus", dueAt: "2026-09-02T22:00:00.000Z", estimatedMinutes: 120 });
+  });
+
+  it("defaults an uncertain area to school and requires review", async () => {
+    const [result] = await parser.parse({ text: "Finish the presentation", timezone: "UTC" });
+    expect(result).toMatchObject({ area: "school", areaConfidence: 0.5 });
+    expect(result.missingFields).toContain("area");
+    expect(result.warnings).toContain("Area is uncertain; review school vs extracurricular classification");
+  });
+
+  it("recognizes extracurricular work without inventing a course", async () => {
+    const [result] = await parser.parse({ text: "Prepare for robotics club 45 minutes", timezone: "UTC" });
+    expect(result).toMatchObject({ area: "extracurricular", course: null, activityLabel: "robotics", areaConfidence: 0.95 });
   });
 
   it("preserves ambiguity and never fabricates a deadline", async () => {

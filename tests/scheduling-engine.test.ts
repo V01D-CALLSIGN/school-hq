@@ -6,7 +6,7 @@ const id = (suffix: number) => `00000000-0000-4000-a000-${String(suffix).padStar
 const base = (): SchedulingInput => ({
   rangeStart: "2026-08-28T00:00:00Z", rangeEnd: "2026-08-30T00:00:00Z", planId: id(99),
   preferences: schedulingPreferencesSchema.parse({ timezone: "America/Chicago", defaultBlockMinutes: 45, breakMinutes: 10, minimumSessionMinutes: 15 }),
-  assignments: [{ id: id(1), dueAt: "2026-08-29T23:00:00Z", estimatedMinutes: 90, priority: "high", dependencyIds: [], status: "confirmed" }],
+  assignments: [{ id: id(1), area: "school", dueAt: "2026-08-29T23:00:00Z", estimatedMinutes: 90, priority: "high", dependencyIds: [], status: "confirmed" }],
   studyWindows: [{ startsAt: "2026-08-28T22:00:00Z", endsAt: "2026-08-29T01:00:00Z" }],
   calendarEvents: [], lockedBlocks: [],
 });
@@ -90,5 +90,14 @@ describe("scheduling engine", () => {
     input.assignments[0].dueAt = input.rangeEnd;
     input.studyWindows = [{ startsAt: "2026-11-01T06:30:00Z", endsAt: "2026-11-01T08:30:00Z" }];
     expect(generateSchedule(input).blocks.filter((block) => block.kind === "work")).toHaveLength(2);
+  });
+
+  it("schedules school and extracurricular work together through one collision engine", () => {
+    const input = base();
+    input.assignments.push({ ...input.assignments[0], id: id(2), area: "extracurricular", estimatedMinutes: 30 });
+    const combined = generateSchedule(input);
+    expect(new Set(combined.blocks.flatMap((block) => block.assignmentId ? [block.assignmentId] : []))).toEqual(new Set([id(1), id(2)]));
+    expect(schedulesOverlap(combined.blocks)).toBe(false);
+    expect(generateSchedule({ ...input, area: "extracurricular" }).blocks.filter((block) => block.kind === "work").every((block) => block.assignmentId === id(2))).toBe(true);
   });
 });

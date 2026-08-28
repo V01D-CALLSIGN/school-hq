@@ -77,7 +77,7 @@ export function parseCalendar(
           description: limited(occurrenceEvent.description, 5000),
           location: limited(occurrenceEvent.location, 500),
           startsAt: start.toISOString(), endsAt: end.toISOString(), allDay: occurrence.isDate,
-          classification: "busy", originalTimezone: limited(occurrence.zone?.tzid, 100),
+          classification: "busy", area: "school", originalTimezone: limited(occurrence.zone?.tzid, 100),
         });
       }
     }

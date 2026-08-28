@@ -8,6 +8,19 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const { user, supabase } = await requireAuth(request);
     const input = createFocusSessionInputSchema.parse(await readJson(request));
+    let blockAssignmentId: string | null = null;
+    if (input.planBlockId) {
+      const { data, error } = await supabase.from("plan_blocks").select("assignment_id").eq("id", input.planBlockId).maybeSingle();
+      if (error || !data) throw new HttpError(422, "INVALID_PLAN_BLOCK", "Plan block must reference one of your blocks", [{ path: "planBlockId", message: "References an inaccessible block" }]);
+      blockAssignmentId = data.assignment_id as string | null;
+    }
+    if (input.assignmentId) {
+      const { data, error } = await supabase.from("assignments").select("id").eq("id", input.assignmentId).maybeSingle();
+      if (error || !data) throw new HttpError(422, "INVALID_ASSIGNMENT", "Assignment must reference one of your assignments", [{ path: "assignmentId", message: "References an inaccessible assignment" }]);
+    }
+    if (input.assignmentId && blockAssignmentId && input.assignmentId !== blockAssignmentId) {
+      throw new HttpError(422, "FOCUS_TARGET_MISMATCH", "Assignment and plan block must refer to the same work");
+    }
     if (input.startedAt && Date.parse(input.startedAt) > Date.now() + 5 * 60_000) {
       throw new HttpError(422, "INVALID_START_TIME", "Focus session cannot start in the future", [{ path: "startedAt", message: "Must not be in the future" }]);
     }

@@ -1,4 +1,4 @@
-import { parseBrainDumpInputSchema, success, type BrainDump } from "@/lib/contracts";
+import { brainDumpSchema, parseBrainDumpInputSchema, success, type BrainDump } from "@/lib/contracts";
 import { MockBrainDumpParser, OllamaBrainDumpParser, OpenAIBrainDumpParser } from "@/lib/brain-dump/parser";
 import { requireAuth } from "@/lib/server/auth";
 import { camelize, assertDb } from "@/lib/server/db";
@@ -28,7 +28,7 @@ export async function POST(request: Request): Promise<Response> {
       user_id: user.id, raw_text: input.text, timezone: input.timezone,
       parsed_assignments: parsedAssignments, parser: env.BRAIN_DUMP_PARSER,
     }).select().single());
-    return success(camelize<BrainDump>(row), { status: 201 });
+    return success(brainDumpSchema.parse(camelize<BrainDump>(row)), { status: 201 });
   } catch (error) {
     return toErrorResponse(error);
   }

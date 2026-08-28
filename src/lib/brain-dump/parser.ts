@@ -10,6 +10,8 @@ const parserOutputJsonSchema = zodToJsonSchema(parserOutputSchema, { $refStrateg
 const extractionInstructions = [
   "Extract assignments only; never invent a deadline or duration.",
   "Return null for unknown values. Preserve ambiguous date language in ambiguousDateText and add a warning.",
+  "Classify area as school or extracurricular. Schoolwork may name a course; extracurricular work may name an activityLabel and must not invent or require a course.",
+  "Return areaConfidence from 0 to 1. When area is uncertain, default area to school, set areaConfidence below 0.75, include area in missingFields, and add a review warning.",
   "Resolve explicit dates using the supplied IANA timezone, returning UTC ISO timestamps.",
   "This output is reviewed by the user and must not directly create assignments.",
 ].join(" ");
@@ -21,6 +23,7 @@ export interface BrainDumpParser {
 const duePattern = /(?:due\s+)?(\d{4}-\d{2}-\d{2})(?:[ T](\d{1,2}:\d{2}))?/i;
 const durationPattern = /(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m)\b/i;
 const ambiguousPattern = /\b(today|tomorrow|tonight|next\s+(?:mon|tues|wednes|thurs|fri|satur|sun)day|this\s+week(?:end)?|next\s+week)\b/i;
+const extracurricularPattern = /\b(club|team|practice|rehearsal|volunteer|student council|debate|robotics|orchestra|band|theater|theatre|soccer|basketball|football|tennis|swim|yearbook)\b/i;
 
 export class MockBrainDumpParser implements BrainDumpParser {
   async parse(input: { text: string; timezone: string; courseContext?: Array<{ name: string }> }): Promise<ParsedAssignment[]> {
@@ -38,6 +41,10 @@ export class MockBrainDumpParser implements BrainDumpParser {
         warnings.push(`Ambiguous date phrase preserved: "${ambiguous}"`);
       }
       const course = input.courseContext?.find(({ name }) => line.toLowerCase().includes(name.toLowerCase()))?.name ?? null;
+      const activityMatch = line.match(extracurricularPattern);
+      const area = activityMatch && !course ? "extracurricular" as const : "school" as const;
+      const areaConfidence = course || activityMatch ? 0.95 : 0.5;
+      if (areaConfidence < 0.75) warnings.push("Area is uncertain; review school vs extracurricular classification");
       const estimatedMinutes = durationMatch
         ? Math.round(Number(durationMatch[1]) * (/^h/i.test(durationMatch[2]) ? 60 : 1))
         : null;
@@ -45,11 +52,14 @@ export class MockBrainDumpParser implements BrainDumpParser {
         .replace(duePattern, "").replace(durationPattern, "").replace(/\s{2,}/g, " ").replace(/^[\s,:-]+|[\s,:-]+$/g, "")
         .slice(0, 240) || "Untitled assignment";
       const missingFields: ParsedAssignment["missingFields"] = [];
-      if (!course) missingFields.push("course");
+      if (areaConfidence < 0.75) missingFields.push("area");
+      if (area === "school" && !course) missingFields.push("course");
       if (!dueAt) missingFields.push("dueAt");
       if (estimatedMinutes === null) missingFields.push("estimatedMinutes");
       return {
-        title: cleanedTitle, course, dueAt, ambiguousDateText: ambiguous, estimatedMinutes,
+        title: cleanedTitle, area, areaConfidence, course: area === "school" ? course : null,
+        activityLabel: area === "extracurricular" ? activityMatch?.[0] ?? null : null,
+        dueAt, ambiguousDateText: ambiguous, estimatedMinutes,
         priority: /\b(urgent|asap)\b/i.test(line) ? "urgent" : /\bimportant\b/i.test(line) ? "high" : "medium",
         taskType: /\bexam|test\b/i.test(line) ? "exam" : /\bread/i.test(line) ? "reading" : /\bproject\b/i.test(line) ? "project" : "assignment",
         dependencies: [], notes: null, confidence: dueAt && estimatedMinutes ? 0.9 : 0.6, missingFields, warnings,

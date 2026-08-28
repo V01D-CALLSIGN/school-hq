@@ -4,7 +4,8 @@ import { OllamaBrainDumpParser } from "@/lib/brain-dump/parser";
 const input = { text: "Finish calculus worksheet by Friday", timezone: "America/Chicago" };
 const structuredOutput = {
   assignments: [{
-    title: "Finish calculus worksheet", course: "Calculus", dueAt: null,
+    title: "Finish calculus worksheet", area: "school", areaConfidence: 0.95,
+    course: "Calculus", activityLabel: null, dueAt: null,
     ambiguousDateText: "Friday", estimatedMinutes: null, priority: "medium",
     taskType: "assignment", dependencies: [], notes: null, confidence: 0.7,
     missingFields: ["dueAt", "estimatedMinutes"], warnings: ["Friday has no unambiguous date"],

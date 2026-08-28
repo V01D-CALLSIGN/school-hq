@@ -61,8 +61,11 @@ All endpoints return either `{ ok: true, data }` or `{ ok: false, error: { code,
 
 - `POST /api/brain-dumps/parse`
 - `GET|POST|PATCH|DELETE /api/assignments`
+- `GET|POST|PATCH|DELETE /api/courses`
+- `GET|PATCH /api/scheduling-preferences`
 - `POST /api/calendar/import`
 - `GET /api/calendar/week`
+- `PATCH /api/calendar/events`
 - `GET|POST|PATCH|DELETE /api/study-windows`
 - `POST /api/plans/generate`
 - `GET|PATCH /api/plans/:id`

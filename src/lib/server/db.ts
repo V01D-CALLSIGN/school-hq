@@ -3,6 +3,9 @@ import { HttpError } from "./errors";
 export function assertDb<T>(result: { data: T | null; error: { code?: string; message: string } | null }): T {
   if (result.error) {
     if (result.error.code === "23505") throw new HttpError(409, "CONFLICT", "The resource already exists");
+    if (result.error.code === "23P01") throw new HttpError(409, "OVERLAP", "The requested time overlaps an existing block");
+    if (result.error.code === "23503") throw new HttpError(422, "INVALID_REFERENCE", "A referenced resource is unavailable");
+    if (result.error.code === "P0002") throw new HttpError(404, "NOT_FOUND", "Resource not found");
     if (result.error.code === "PGRST116") throw new HttpError(404, "NOT_FOUND", "Resource not found");
     console.error("Database error", result.error);
     throw new HttpError(500, "DATABASE_ERROR", "The database operation failed");
@@ -25,4 +28,12 @@ export function snakeize(value: Record<string, unknown>): Record<string, unknown
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [
     key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`), item,
   ]));
+}
+
+export function normalizePreferences<T>(value: unknown): T {
+  const preferences = camelize<Record<string, unknown>>(value);
+  if (typeof preferences.bedtime === "string") preferences.bedtime = preferences.bedtime.slice(0, 5);
+  delete preferences.userId;
+  delete preferences.updatedAt;
+  return preferences as T;
 }

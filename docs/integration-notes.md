@@ -32,3 +32,44 @@ Remaining frontend integration: supply Supabase session cookies or a Bearer acce
 - The Ollama adapter checks server/model health, applies the existing timeout and Zod/JSON Schema validation, and retries one complete attempt for transient, timeout, or malformed-output failures. A confirmed missing model is not retried.
 - Stable errors added: `OLLAMA_UNAVAILABLE`, `OLLAMA_MODEL_UNAVAILABLE`, `PARSER_TIMEOUT`, and `PARSER_INVALID_RESPONSE`.
 - OpenAI remains supported but optional; no OpenAI environment variable is required unless `BRAIN_DUMP_PARSER=openai` is selected.
+
+## 2026-08-28 — Persistence completeness and work areas
+
+The copy-safe TypeScript snapshot is `docs/frontend-contract.ts`. It contains types only and has no Zod, Supabase, Node, or server imports. `src/lib/contracts` remains the canonical runtime/Zod source.
+
+Every JSON endpoint returns exactly one envelope:
+
+```ts
+{ ok: true, data: T, meta?: Record<string, unknown> }
+{ ok: false, error: { code: string, message: string, fields?: { path: string; message: string }[], requestId?: string } }
+```
+
+Malformed JSON returns HTTP 400 `INVALID_JSON`; unauthenticated calls return 401 `UNAUTHORIZED`; Zod failures return 422 `VALIDATION_ERROR` with `fields`; RLS-hidden IDs return 404 `NOT_FOUND`; duplicate resources return 409 `CONFLICT`; plan collisions return 409 `BLOCK_OVERLAP` (application preflight) or `OVERLAP` (database race protection). Unexpected database/provider details are never exposed.
+
+Collection endpoint wire contracts:
+
+| Endpoint | Request | Success `data` |
+| --- | --- | --- |
+| `GET /api/courses` | none | `Course[]` |
+| `POST /api/courses` | `{ name, code, color }` | `Course` (201) |
+| `PATCH /api/courses` | `{ id, name?, code?, color? }` | `Course` |
+| `DELETE /api/courses` | `{ id }` | `{ id }` |
+| `GET /api/assignments?area=school\|extracurricular&status=...` | none | `Assignment[]` |
+| `POST /api/assignments` | `CreateAssignmentBody` (`area` defaults to `school`; `activityLabel` defaults to `null`) | `Assignment` (201) |
+| `PATCH /api/assignments` | `{ id, ...changedAssignmentFields }` | `Assignment` |
+| `DELETE /api/assignments` | `{ id }` | `{ id }` |
+| `GET /api/scheduling-preferences` | none | `SchedulingPreferences` |
+| `PATCH /api/scheduling-preferences` | any non-empty subset of `SchedulingPreferences` | `SchedulingPreferences` |
+| `PATCH /api/calendar/events` | `{ id, classification: "busy" \| "study_available" \| "ignored" }` | `CalendarEvent` |
+
+School assignments may use `courseId` and must have `activityLabel: null`. Extracurricular assignments use `courseId: null` and may provide `activityLabel`; no placeholder course is required. Existing and omitted-area records safely resolve to `school`. Assignment/course/dependency/focus targets and calendar event IDs are all resolved under the authenticated user's RLS session.
+
+Calendar import remains multipart. Alongside required `file` and optional `classification`, it accepts optional `area=school|extracurricular` (default `school`). `GET /api/calendar/week` accepts the same optional `area` query filter. `PATCH /api/calendar/events` changes classification only; it does not rewrite imported event identity or timestamps.
+
+Plan generation body is `{ rangeStart, rangeEnd, timezone, area? }`. Omitting `area` is combined mode and persists `areaFilter: "combined"`; supplying an area filters assignment candidates and persists that value. Both areas use the same availability/collision engine in combined mode. Busy events and locked blocks remain global constraints regardless of the assignment filter. Locked blocks keep their IDs/times and move to the regenerated draft as before.
+
+`PATCH /api/plans/:id` accepts `{ status?, blocks?: [{ id, startsAt?, endsAt?, locked? }] }`. At least one top-level update and one changed field per block are required. The final block set must have positive durations, stay within `rangeStart`/`rangeEnd`, contain no duplicate IDs, and not overlap. The edit is applied atomically; inaccessible plan/block IDs are 404.
+
+Parsed assignments now include `area`, `areaConfidence`, and `activityLabel`. The Structured Output schema and extraction prompt require low confidence plus an `area` missing-field/review warning when classification is uncertain. Parsing still creates review candidates only.
+
+`GET /api/stats/summary?timezone=...` returns `{ school, extracurricular, combined, generatedAt, timezone }`. Each slice contains assignment, focus, and plan totals. Focus and scheduled minutes inherit area through the related assignment/plan block; combined totals include both areas (and retain unattributed focus time only in combined totals).
