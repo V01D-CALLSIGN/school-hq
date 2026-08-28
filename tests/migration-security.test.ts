@@ -4,6 +4,11 @@ import { describe, expect, it } from "vitest";
 
 const sql = readFileSync(fileURLToPath(new URL("../supabase/migrations/202608280001_initial_schema.sql", import.meta.url)), "utf8");
 const areaMigration = readFileSync(fileURLToPath(new URL("../supabase/migrations/202608280002_work_areas_and_plan_edits.sql", import.meta.url)), "utf8");
+const supabaseConfig = readFileSync(fileURLToPath(new URL("../supabase/config.toml", import.meta.url)), "utf8");
+const defaultSeed = readFileSync(fileURLToPath(new URL("../supabase/seed.sql", import.meta.url)), "utf8");
+const demoSeed = readFileSync(fileURLToPath(new URL("../supabase/seeds/demo.sql", import.meta.url)), "utf8");
+const clearDemoSeed = readFileSync(fileURLToPath(new URL("../supabase/seeds/clear-demo.sql", import.meta.url)), "utf8");
+const demoUserId = "00000000-0000-4000-a000-00000000de00";
 const userTables = ["profiles", "courses", "assignments", "brain_dumps", "calendar_imports", "calendar_events", "study_windows", "study_plans", "plan_blocks", "focus_sessions", "scheduling_preferences"];
 
 describe("migration security declarations", () => {
@@ -38,5 +43,30 @@ describe("migration security declarations", () => {
     expect(areaMigration).toContain("deferrable initially deferred");
     expect(areaMigration).toContain("function public.apply_plan_edits");
     expect(areaMigration).toContain("security invoker");
+  });
+
+  it("keeps normal database resets empty and excludes opt-in demo files", () => {
+    expect(supabaseConfig).toContain('sql_paths = ["./seed.sql"]');
+    expect(supabaseConfig).not.toContain("seeds/demo.sql");
+    expect(defaultSeed).not.toMatch(/insert\s+into|update\s+public\.|delete\s+from/i);
+    expect(defaultSeed).not.toContain(demoUserId);
+  });
+
+  it("uses one fixed development-only identity without real-user substitution instructions", () => {
+    expect(demoSeed).toContain(demoUserId);
+    expect(demoSeed).toContain("demo@school-hq.invalid");
+    expect(demoSeed).toContain(":{?school_hq_demo_seed}");
+    expect(demoSeed).not.toMatch(/replace the uuid|substitute (?:a |the )?(?:real|your)|your (?:auth )?user(?:'s)? id/i);
+    expect(new Set(demoSeed.match(/00000000-0000-4000-a000-00000000de00/g))).toEqual(new Set([demoUserId]));
+  });
+
+  it("cleans up only the guarded demo identity through ownership cascades", () => {
+    expect(clearDemoSeed).toContain(`where id = '${demoUserId}'`);
+    expect(clearDemoSeed).toContain("and email = 'demo@school-hq.invalid'");
+    expect(clearDemoSeed.match(/delete\s+from/gi)).toHaveLength(1);
+    expect(clearDemoSeed).toContain("delete from auth.users");
+    for (const table of userTables) {
+      expect(sql).toMatch(new RegExp(`create table public\\.${table} \\([\\s\\S]*?references auth\\.users\\(id\\) on delete cascade`));
+    }
   });
 });

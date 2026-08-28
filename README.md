@@ -19,9 +19,18 @@ The language model extracts reviewable assignment candidates. Only deterministic
 1. Install Node.js 22+, Docker, and the Supabase CLI.
 2. Copy `.env.example` to `.env.local` and fill in the local Supabase URL and anon key.
 3. Run `npm install`.
-4. Run `supabase start`, then `supabase db reset` to apply migrations and seed data.
-5. Create a local auth user. To load the optional demo rows, update the UUID in `supabase/seed.sql` and run `supabase db reset` again.
+4. Run `supabase start`, then `supabase db reset` to apply migrations. The default seed is intentionally empty, so this produces an empty application database.
+5. Create your local auth user normally. Never substitute its UUID into demo SQL.
 6. Run `npm run dev`.
+
+Optional demo data uses only the fixed development identity `00000000-0000-4000-a000-00000000de00`. Load and remove it from the repository root with:
+
+```sh
+psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -v ON_ERROR_STOP=1 -v school_hq_demo_seed=1 -f supabase/seeds/demo.sql
+psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -v ON_ERROR_STOP=1 -f supabase/seeds/clear-demo.sql
+```
+
+The loader is idempotent and refuses to run without the explicit opt-in variable. Cleanup deletes only the reserved demo identity after verifying its fixed `.invalid` email; existing ownership cascades remove its application rows safely. A later `supabase db reset` also returns the application database to an empty state because only `supabase/seed.sql` runs automatically.
 
 Tests default to `BRAIN_DUMP_PARSER=mock`. For real local parsing, install [Ollama](https://ollama.com/), then run:
 
