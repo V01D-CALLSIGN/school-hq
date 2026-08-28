@@ -1,3 +1,35 @@
-import {AlertTriangle,Inbox,RefreshCw,WifiOff} from "lucide-react";
-import {Button} from "@/components/ui/button";
-export function StatusState({kind,title,description,onRetry}:{kind:"empty"|"error"|"offline";title:string;description:string;onRetry?:()=>void}){const Icon=kind==="empty"?Inbox:kind==="offline"?WifiOff:AlertTriangle;return <div className="surface grid min-h-64 place-items-center rounded-2xl p-8 text-center"><div><div className="mx-auto mb-4 grid size-12 place-items-center rounded-2xl bg-card-strong text-muted"><Icon/></div><h2 className="font-semibold">{title}</h2><p className="mx-auto mt-1 max-w-sm text-sm text-muted">{description}</p>{onRetry&&<Button variant="secondary" className="mt-5" onClick={onRetry}><RefreshCw size={15}/>Try again</Button>}</div></div>}
+import { AlertTriangle, Inbox, RefreshCw, WifiOff } from "lucide-react";
+import { Button } from "@/components/ui/button";
+export function StatusState({
+  kind,
+  title,
+  description,
+  onRetry,
+}: {
+  kind: "empty" | "error" | "offline";
+  title: string;
+  description: string;
+  onRetry?: () => void;
+}) {
+  const Icon =
+    kind === "empty" ? Inbox : kind === "offline" ? WifiOff : AlertTriangle;
+  return (
+    <div className="surface grid min-h-64 place-items-center rounded-2xl p-8 text-center">
+      <div>
+        <div className="mx-auto mb-4 grid size-12 place-items-center rounded-2xl bg-card-strong text-muted">
+          <Icon />
+        </div>
+        <h2 className="font-semibold">{title}</h2>
+        <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
+          {description}
+        </p>
+        {onRetry && (
+          <Button variant="secondary" className="mt-5" onClick={onRetry}>
+            <RefreshCw size={15} />
+            Try again
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1,17 +1,6 @@
 # School HQ frontend
 
-A mobile-first school planning PWA built with Next.js App Router, TypeScript, Tailwind CSS, customized shadcn-style source components, and Lucide icons.
-
-## Routes
-
-- `/` dashboard command center
-- `/assignments` searchable assignment manager
-- `/calendar` weekly grid, mobile agenda, and `.ics` classification flow
-- `/planner` brain dump, human review, and generated timeline
-- `/focus` persistent timestamp-based countdown
-- `/stats` weekly progress and course breakdown
-- `/settings` theme, notifications, calendar, and profile controls
-- `/login` passwordless sign-in shell
+A responsive personal command center for schoolwork, extracurricular commitments, planning, and focused work. Built with Next.js 16 App Router, TypeScript, Tailwind CSS 4, editable shadcn/ui source, Supabase Auth, and a safe offline shell.
 
 ## Local development
 
@@ -21,7 +10,16 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Mocks are on by default. Set `NEXT_PUBLIC_USE_MOCK_API=false` when the backend implements the contract in `docs/integration-notes.md`.
+Mock mode is enabled by default for isolated UI and screenshot tests. For live integration:
+
+```dotenv
+NEXT_PUBLIC_USE_MOCK_API=false
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+BACKEND_INTERNAL_URL=http://127.0.0.1:3001
+```
+
+`BACKEND_INTERNAL_URL` is server-only. Browser requests always use same-origin `/api`; do not create public backend or Ollama URL variables.
 
 ## Quality checks
 
@@ -33,14 +31,4 @@ npm run test:e2e
 npm run build
 ```
 
-The Playwright suite runs mobile and desktop smoke coverage. Install its Chromium runtime with `npx playwright install chromium` if it is not already available.
-
-## Environment
-
-- `NEXT_PUBLIC_USE_MOCK_API`: use the exact-type mock adapter (`true` by default).
-- `NEXT_PUBLIC_API_BASE_URL`: optional API origin when endpoints are not same-origin.
-- `NEXT_PUBLIC_SITE_URL`: trusted absolute origin used for social-preview metadata.
-- `NEXT_PUBLIC_SUPABASE_URL`: reserved for backend-auth integration.
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: publishable Supabase anon key only; never use a service-role key in the browser.
-
-See `docs/architecture.md` for code boundaries and `docs/integration-notes.md` for backend assumptions.
+The Playwright suite includes mobile, tablet, desktop, and visual baselines for dashboard, planner, calendar, and focus at 390px and desktop widths. See `docs/integration-notes.md` for exact backend conventions and currently missing area capabilities.

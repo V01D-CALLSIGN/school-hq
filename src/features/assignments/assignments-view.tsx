@@ -1,10 +1,356 @@
 "use client";
-import {Check,ChevronDown,Filter,Plus,Search,SlidersHorizontal,X} from "lucide-react";
-import {useMemo,useState} from "react";
-import {Button} from "@/components/ui/button";
-import {Card,CardContent} from "@/components/ui/card";
-import {PageHeader} from "@/components/page-header";
-import {assignments as seed,courses} from "@/lib/mock-data";
-export function AssignmentsView(){const[items,setItems]=useState(seed);const[query,setQuery]=useState("");const[filter,setFilter]=useState<"all"|"todo"|"completed">("all");const[adding,setAdding]=useState(false);const[title,setTitle]=useState("");const visible=useMemo(()=>items.filter(a=>(filter==="all"||(filter==="completed"?a.status==="completed":a.status!=="completed"))&&a.title.toLowerCase().includes(query.toLowerCase())),[items,filter,query]);function add(){if(!title.trim())return;setItems(x=>[{id:crypto.randomUUID(),title,courseId:"physics",dueAt:null,estimatedMinutes:30,priority:"medium",status:"todo"},...x]);setTitle("");setAdding(false)}return <div className="space-y-5"><PageHeader eyebrow="Assignments" title="Everything due, nothing buried." description="Prioritized by deadline and workload. Filters are local until the backend lands." action={<Button onClick={()=>setAdding(true)}><Plus size={16}/>New assignment</Button>}/><div className="flex flex-col gap-3 sm:flex-row"><label className="relative flex-1"><span className="sr-only">Search assignments</span><Search size={17} className="absolute left-3 top-3.5 text-muted"/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search assignments…" className="input pl-10"/></label><div className="flex gap-2 overflow-x-auto scrollbar-none">{(["all","todo","completed"] as const).map(f=><button key={f} onClick={()=>setFilter(f)} className={`min-h-11 shrink-0 rounded-xl border px-4 text-xs font-semibold capitalize ${filter===f?"border-accent/30 bg-accent/10 text-accent":"border-border bg-card text-muted"}`}>{f}</button>)}<Button variant="secondary" size="icon" aria-label="More filters"><SlidersHorizontal size={16}/></Button></div></div>
-<Card><CardContent className="p-0"><div className="hidden grid-cols-[44px_1fr_160px_110px_90px_44px] gap-3 border-b border-border px-5 py-3 text-xs font-semibold uppercase tracking-[.12em] text-muted md:grid"><span/><span>Assignment</span><span>Course</span><span>Due</span><span>Estimate</span><span/></div>{visible.length?visible.map(a=>{const course=courses.find(c=>c.id===a.courseId);return <div key={a.id} className="grid grid-cols-[40px_1fr_auto] items-center gap-3 border-b border-border p-4 last:border-0 md:grid-cols-[44px_1fr_160px_110px_90px_44px] md:px-5"><button aria-label={a.status==="completed"?`Mark ${a.title} incomplete`:`Complete ${a.title}`} onClick={()=>setItems(xs=>xs.map(x=>x.id===a.id?{...x,status:x.status==="completed"?"todo":"completed"}:x))} className={`grid size-6 place-items-center rounded-full border ${a.status==="completed"?"border-success bg-success text-[#142005]":"border-border hover:border-success"}`}>{a.status==="completed"&&<Check size={14}/>}</button><div className="min-w-0"><p className={`truncate text-sm font-semibold ${a.status==="completed"?"text-muted line-through":""}`}>{a.title}</p><div className="mt-1 flex gap-2 text-xs text-muted md:hidden"><span>{course?.name}</span><span>·</span><span>{a.dueAt?new Date(a.dueAt).toLocaleDateString([],{month:"short",day:"numeric"}):"No due date"}</span></div></div><span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase ${a.priority==="high"?"bg-danger/10 text-danger":a.priority==="medium"?"bg-amber-300/10 text-amber-300":"bg-card-strong text-muted"}`}>{a.priority}</span><span className="hidden items-center gap-2 text-sm md:flex"><span className="size-2 rounded-full" style={{background:course?.color}}/>{course?.name}</span><span className="hidden text-sm text-muted md:block">{a.dueAt?new Date(a.dueAt).toLocaleDateString([],{month:"short",day:"numeric"}):"—"}</span><span className="hidden text-sm text-muted md:block">{a.estimatedMinutes?`${a.estimatedMinutes}m`:"—"}</span><Button variant="ghost" size="icon" aria-label={`More options for ${a.title}`}><ChevronDown size={16}/></Button></div>}):<div className="grid min-h-56 place-items-center text-center"><div><Filter className="mx-auto mb-3 text-muted"/><p className="font-semibold">No matches</p><p className="mt-1 text-sm text-muted">Try a different search or filter.</p></div></div>}</CardContent></Card>
-{adding&&<div className="fixed inset-0 z-50 grid place-items-end bg-black/70 sm:place-items-center sm:p-6"><section role="dialog" aria-modal="true" aria-labelledby="add-title" className="w-full rounded-t-3xl border border-border bg-card p-5 sm:max-w-lg sm:rounded-2xl"><div className="flex items-center justify-between"><h2 id="add-title" className="text-lg font-semibold">New assignment</h2><Button variant="ghost" size="icon" aria-label="Close" onClick={()=>setAdding(false)}><X size={18}/></Button></div><div className="mt-5 space-y-4"><label className="block text-xs font-semibold text-muted">Title<input autoFocus value={title} onChange={e=>setTitle(e.target.value)} className="input mt-1.5" placeholder="What needs doing?"/></label><label className="block text-xs font-semibold text-muted">Course<select className="input mt-1.5">{courses.map(c=><option key={c.id}>{c.name}</option>)}</select></label><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-muted">Due<input type="date" className="input mt-1.5"/></label><label className="text-xs font-semibold text-muted">Minutes<input type="number" defaultValue="30" className="input mt-1.5"/></label></div><Button onClick={add} disabled={!title.trim()} className="w-full">Add assignment</Button></div></section></div>}</div>}
+import { Check, Filter, LoaderCircle, Plus, Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  AreaBadge,
+  AreaFilterControl,
+  resolveArea,
+  useAreaFilter,
+} from "@/components/area-filter";
+import { PageHeader } from "@/components/page-header";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { api } from "@/lib/api-client";
+import { isMockMode } from "@/lib/supabase/client";
+import { activityPlaceholder, courses } from "@/mocks/data";
+import type { Assignment, WorkArea } from "@/types/api";
+
+export function AssignmentsView() {
+  const [items, setItems] = useState<Assignment[]>([]);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<"all" | "open" | "completed">("all");
+  const [area, setArea] = useAreaFilter();
+  const [adding, setAdding] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [draft, setDraft] = useState({
+    title: "",
+    area: "school" as WorkArea,
+    context: "",
+    dueAt: "",
+    estimatedMinutes: 30,
+  });
+  useEffect(() => {
+    void api
+      .listAssignments()
+      .then(setItems)
+      .catch((reason: Error) => setError(reason.message))
+      .finally(() => setLoading(false));
+  }, []);
+  const visible = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          (area === "all" || resolveArea(item) === area) &&
+          (status === "all" ||
+            (status === "completed"
+              ? item.status === "completed"
+              : !["completed", "archived"].includes(item.status))) &&
+          item.title.toLowerCase().includes(query.toLowerCase()),
+      ),
+    [items, area, query, status],
+  );
+  const contextFor = (item: Assignment) =>
+    resolveArea(item) === "extracurricular"
+      ? (item.activityName ?? "Extracurricular")
+      : isMockMode()
+        ? (courses.find((course) => course.id === item.courseId)?.name ??
+          "No course")
+        : item.courseId
+          ? "Course assigned"
+          : "No course";
+  async function add() {
+    if (!draft.title.trim()) return;
+    setLoading(true);
+    try {
+      const created = await api.createAssignment({
+        title: draft.title.trim(),
+        area: draft.area,
+        activityName:
+          draft.area === "extracurricular" ? draft.context || null : null,
+        courseId:
+          draft.area === "school" && isMockMode() ? courses[0].id : null,
+        dueAt: draft.dueAt ? new Date(draft.dueAt).toISOString() : null,
+        estimatedMinutes: draft.estimatedMinutes,
+        priority: "medium",
+        taskType: "assignment",
+        dependencyIds: [],
+        notes:
+          draft.area === "school" && draft.context
+            ? `Course: ${draft.context}`
+            : null,
+        status: "confirmed",
+      });
+      setItems((current) => [
+        {
+          ...created,
+          area: created.area ?? draft.area,
+          activityName: created.activityName ?? (draft.context || null),
+        },
+        ...current,
+      ]);
+      setAdding(false);
+      setDraft({
+        title: "",
+        area: "school",
+        context: "",
+        dueAt: "",
+        estimatedMinutes: 30,
+      });
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Could not add that item.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+  async function toggle(item: Assignment) {
+    const next = item.status === "completed" ? "confirmed" : "completed";
+    setItems((current) =>
+      current.map((value) =>
+        value.id === item.id ? { ...value, status: next } : value,
+      ),
+    );
+    try {
+      await api.patchAssignment({ id: item.id, status: next });
+    } catch (reason) {
+      setItems((current) =>
+        current.map((value) => (value.id === item.id ? item : value)),
+      );
+      setError(reason instanceof Error ? reason.message : "Update failed.");
+    }
+  }
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Assignments // queue"
+        title="Everything due, nothing buried."
+        description="School and EC work share one queue without becoming the same thing."
+        action={
+          <Button onClick={() => setAdding(true)}>
+            <Plus size={16} />
+            New item
+          </Button>
+        }
+      />
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <label className="relative flex-1">
+          <span className="sr-only">Search assignments</span>
+          <Search size={17} className="absolute left-3 top-3.5 text-muted" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search the queue…"
+            className="pl-10"
+          />
+        </label>
+        <AreaFilterControl value={area} onChange={setArea} />
+        <div className="flex gap-1 rounded-xl border border-border bg-card p-1">
+          {(["all", "open", "completed"] as const).map((value) => (
+            <button
+              key={value}
+              onClick={() => setStatus(value)}
+              className={`min-h-9 rounded-lg px-3 text-xs font-semibold capitalize ${status === value ? "bg-card-strong text-foreground" : "text-muted"}`}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+      </div>
+      {error && (
+        <p
+          role="alert"
+          className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger"
+        >
+          {error}
+        </p>
+      )}
+      <Card className="overflow-hidden border-l-2 border-l-accent/70">
+        <CardContent className="p-0">
+          {loading && !items.length ? (
+            <div className="space-y-3 p-5">
+              {[1, 2, 3].map((key) => (
+                <Skeleton key={key} className="h-14" />
+              ))}
+            </div>
+          ) : visible.length ? (
+            visible.map((item) => (
+              <div
+                key={item.id}
+                className="grid grid-cols-[36px_1fr_auto] items-center gap-3 border-b border-border p-4 last:border-0 sm:grid-cols-[40px_1fr_130px_auto]"
+              >
+                <button
+                  aria-label={
+                    item.status === "completed"
+                      ? `Mark ${item.title} incomplete`
+                      : `Complete ${item.title}`
+                  }
+                  onClick={() => void toggle(item)}
+                  className={`grid size-6 place-items-center rounded-full border ${item.status === "completed" ? "border-success bg-success text-[#142005]" : "border-border hover:border-success"}`}
+                >
+                  {item.status === "completed" && <Check size={14} />}
+                </button>
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p
+                      className={`truncate text-sm font-semibold ${item.status === "completed" ? "text-muted line-through" : ""}`}
+                    >
+                      {item.title}
+                    </p>
+                    <AreaBadge area={resolveArea(item)} />
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted">
+                    {contextFor(item)} ·{" "}
+                    {item.dueAt
+                      ? new Date(item.dueAt).toLocaleDateString([], {
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : "No due date"}
+                  </p>
+                </div>
+                <span className="hidden font-mono text-xs text-muted sm:block">
+                  {item.estimatedMinutes}m
+                </span>
+                <Badge
+                  variant={
+                    item.priority === "urgent" || item.priority === "high"
+                      ? "destructive"
+                      : "outline"
+                  }
+                >
+                  {item.priority}
+                </Badge>
+              </div>
+            ))
+          ) : (
+            <div className="grid min-h-56 place-items-center p-6 text-center">
+              <div>
+                <Filter className="mx-auto mb-3 text-accent" />
+                <p className="font-semibold">Nothing on this channel.</p>
+                <p className="mt-1 text-sm text-muted">
+                  Change the filter or add the next thing.
+                </p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      <Dialog open={adding} onOpenChange={setAdding}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New work item</DialogTitle>
+            <DialogDescription>
+              Choose the lane now so planning and stats stay honest.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-5 space-y-4">
+            <label className="block text-xs font-semibold text-muted">
+              Title
+              <Input
+                autoFocus
+                value={draft.title}
+                onChange={(event) =>
+                  setDraft({ ...draft, title: event.target.value })
+                }
+                className="mt-1.5"
+              />
+            </label>
+            <fieldset>
+              <legend className="mb-1.5 text-xs font-semibold text-muted">
+                Area
+              </legend>
+              <div className="grid grid-cols-2 gap-2">
+                {(["school", "extracurricular"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setDraft({ ...draft, area: value })}
+                    className={`min-h-11 rounded-lg border text-sm font-semibold ${draft.area === value ? (value === "school" ? "border-accent bg-accent/10 text-accent" : "border-amber-300/40 bg-amber-300/10 text-amber-200") : "border-border text-muted"}`}
+                  >
+                    {value === "school" ? "School" : "Extracurricular"}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            <label className="block text-xs font-semibold text-muted">
+              {draft.area === "school"
+                ? "Course (optional)"
+                : "Activity, club, team, or project"}
+              <Input
+                value={draft.context}
+                onChange={(event) =>
+                  setDraft({ ...draft, context: event.target.value })
+                }
+                className="mt-1.5"
+                placeholder={
+                  draft.area === "school"
+                    ? "Course"
+                    : isMockMode()
+                      ? activityPlaceholder
+                      : "Activity name"
+                }
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs font-semibold text-muted">
+                Due
+                <Input
+                  type="datetime-local"
+                  value={draft.dueAt}
+                  onChange={(event) =>
+                    setDraft({ ...draft, dueAt: event.target.value })
+                  }
+                  className="mt-1.5"
+                />
+              </label>
+              <label className="text-xs font-semibold text-muted">
+                Minutes
+                <Input
+                  type="number"
+                  min={0}
+                  value={draft.estimatedMinutes}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      estimatedMinutes: Number(event.target.value),
+                    })
+                  }
+                  className="mt-1.5"
+                />
+              </label>
+            </div>
+          </div>
+          <DialogFooter className="mt-5">
+            <Button variant="ghost" onClick={() => setAdding(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void add()}
+              disabled={!draft.title.trim() || loading}
+            >
+              {loading ? (
+                <LoaderCircle className="animate-spin" size={16} />
+              ) : (
+                <Plus size={16} />
+              )}
+              Add item
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

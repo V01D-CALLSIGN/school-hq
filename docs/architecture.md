@@ -1,24 +1,21 @@
 # Frontend architecture
 
-School HQ is a Next.js App Router PWA. Route files remain server components where possible; stateful product surfaces live in `src/features` as narrow client components. Shared UI primitives live in `src/components/ui` and use customized shadcn-style source rather than an external component theme.
+School HQ is a Next.js App Router PWA with a customized editable shadcn/ui layer and a “retro-futurist academic cockpit” visual system.
 
-## Layers
+## Boundaries
 
-- `src/app`: routes, metadata, loading/error boundaries, manifest.
-- `src/features`: dashboard, planner, calendar, assignments, focus, stats, settings, and auth experiences.
-- `src/components`: application shell, page framing, status states, and UI primitives.
-- `src/types/api.ts`: the frontend-owned copy of the proposed HTTP contract until the backend publishes a shared package.
-- `src/lib/api-client.ts`: the only browser-facing server boundary. It swaps between HTTP and mock responses without changing feature return types.
-- `src/lib/mock-data.ts`: deterministic display fixtures only. Scheduling and parsing logic are not implemented here.
+- `src/app`: routes, metadata, manifest, and global theme tokens.
+- `src/features`: authenticated product surfaces and Supabase login/session flow.
+- `src/components/ui`: genuine local shadcn/Radix source components configured by `components.json`.
+- `src/components/area-filter.tsx`: persisted All/School/EC filtering and compact area badges.
+- `src/types/api.ts`: frontend-safe copy of the inspected backend DTOs, plus isolated optional area extensions pending backend support.
+- `src/lib/api-client.ts`: same-origin HTTP boundary, response-envelope unwrapping, bearer auth, and deterministic mock adapter.
+- `src/mocks`: all fabricated assignments, EC activities, calendar events, plans, parser output, and stats.
 
-## State and persistence
+Authenticated routes are protected by the Supabase session provider in real mode. API authorization is enforced independently by the backend. Sign-out terminates the local Supabase session, clears timer state, and instructs the service worker to clear its caches.
 
-Most display data is mock-adapter data and will be replaced by Supabase-backed endpoints. The focus timer stores only its device-local runtime state in `localStorage`. Its remaining time is always `endAt - Date.now()` while running; the interval triggers renders but is not the source of truth. Theme preference is also device-local.
+The service worker bypasses API/auth requests, non-GET and cross-origin requests, and never stores failed responses. Static assets are cache-first; safe shell navigation is network-first.
 
-## Responsive model
+## Visual system
 
-Desktop uses a collapsible sidebar. Phones use a five-item bottom navigation plus a menu drawer. Calendar switches from a seven-day grid to a single-day agenda below the medium breakpoint. Core controls use a minimum 44px touch target and visible `:focus-visible` treatment.
-
-## PWA
-
-`app/manifest.ts` declares standalone installation metadata. `public/sw.js` caches the application shell and uses network-first navigation with a cached fallback. The service worker registers only in production.
+Space Grotesk provides display/body character and IBM Plex Mono carries timestamps, durations, labels, and system telemetry. Cyan marks school, amber marks extracurriculars, violet marks active focus, lime marks completion, coral marks urgency, and slate carries neutral planning state. Cards use a tighter radius scale, selective corner cuts, rails, inset panels, and restrained state glows.

@@ -1,9 +1,212 @@
 "use client";
-import {ArrowUpRight,Award,Clock3,Flame,Target} from "lucide-react";
-import {Card,CardContent,CardHeader} from "@/components/ui/card";
-import {PageHeader} from "@/components/page-header";
-const days=[{d:"Mon",v:62},{d:"Tue",v:38},{d:"Wed",v:86},{d:"Thu",v:55},{d:"Fri",v:74},{d:"Sat",v:26},{d:"Sun",v:0}];
-const courses=[{name:"AP Physics",value:38,color:"bg-violet-400"},{name:"English 11",value:27,color:"bg-cyan-400"},{name:"Precalculus",value:22,color:"bg-amber-300"},{name:"US History",value:13,color:"bg-rose-400"}];
-export function StatsView(){return <div className="space-y-5"><PageHeader eyebrow="Stats" title="Momentum, not surveillance." description="Use the trend to adjust the plan—not to guilt-trip yourself over Tuesday."/><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[["Focused","7h 32m","+1h 18m",Clock3,"text-accent"],["Completed","12 tasks","+3",Target,"text-success"],["Current streak","4 days","Best: 9",Flame,"text-amber-300"],["On-time rate","92%","+6%",Award,"text-violet-300"]].map(([label,value,delta,Icon,color])=><Card key={String(label)}><CardContent><div className="flex items-start justify-between"><div><p className="text-xs uppercase tracking-[.14em] text-muted">{String(label)}</p><p className="mt-3 text-2xl font-bold">{String(value)}</p><p className="mt-1 flex items-center gap-1 text-xs text-success"><ArrowUpRight size={12}/>{String(delta)}</p></div><div className={`grid size-10 place-items-center rounded-xl bg-card-strong ${String(color)}`}><Icon size={19}/></div></div></CardContent></Card>)}</div>
-<div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]"><Card><CardHeader><div><p className="text-xs uppercase tracking-[.14em] text-muted">Focus time</p><h2 className="mt-1 text-lg font-semibold">This week</h2></div><span className="text-xs text-muted">Goal: 10h</span></CardHeader><CardContent><div className="flex h-64 items-end gap-3 sm:gap-5" role="img" aria-label="Focus time by day: Monday 62 minutes, Tuesday 38, Wednesday 86, Thursday 55, Friday 74, Saturday 26, Sunday zero"><div className="flex h-[220px] flex-col justify-between pb-6 text-[10px] text-muted"><span>90m</span><span>60m</span><span>30m</span><span>0</span></div>{days.map(x=><div key={x.d} className="flex h-[220px] min-w-0 flex-1 flex-col justify-end gap-2"><div className="group relative flex-1"><div className="absolute inset-x-0 bottom-0 rounded-t-lg bg-accent/70 transition-colors hover:bg-accent" style={{height:`${x.v/90*100}%`}}><span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-muted opacity-0 group-hover:opacity-100">{x.v}m</span></div></div><span className="text-center text-[10px] text-muted">{x.d}</span></div>)}</div></CardContent></Card>
-<Card><CardHeader><div><p className="text-xs uppercase tracking-[.14em] text-muted">By course</p><h2 className="mt-1 text-lg font-semibold">Where time went</h2></div></CardHeader><CardContent><div className="mx-auto mb-7 grid size-44 place-items-center rounded-full" style={{background:"conic-gradient(#a78bfa 0 38%,#22d3ee 38% 65%,#fde047 65% 87%,#fb7185 87%)"}} role="img" aria-label="Focus time by course"><div className="grid size-28 place-items-center rounded-full bg-card text-center"><div><p className="text-2xl font-bold">7.5h</p><p className="text-[10px] text-muted">total</p></div></div></div><div className="space-y-3">{courses.map(c=><div className="flex items-center gap-3 text-sm" key={c.name}><span className={`size-2.5 rounded-full ${c.color}`}/><span className="flex-1">{c.name}</span><span className="font-mono text-xs text-muted">{c.value}%</span></div>)}</div></CardContent></Card></div></div>}
+import { Award, Clock3, Target } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  AreaFilterControl,
+  resolveArea,
+  useAreaFilter,
+} from "@/components/area-filter";
+import { PageHeader } from "@/components/page-header";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
+import { api } from "@/lib/api-client";
+import type { Assignment, StatsSummary } from "@/types/api";
+export function StatsView() {
+  const [area, setArea] = useAreaFilter();
+  const [summary, setSummary] = useState<StatsSummary | null>(null);
+  const [renderedAt] = useState(() => Date.now());
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    void Promise.all([api.getStats(timezone), api.listAssignments()])
+      .then(([stats, items]) => {
+        setSummary(stats);
+        setAssignments(items);
+      })
+      .catch((reason: Error) => setError(reason.message));
+  }, []);
+  const totals = useMemo(() => {
+    const scoped = assignments.filter(
+      (item) => area === "all" || resolveArea(item) === area,
+    );
+    return {
+      total: scoped.length,
+      completed: scoped.filter((item) => item.status === "completed").length,
+      overdue: scoped.filter(
+        (item) =>
+          item.dueAt &&
+          Date.parse(item.dueAt) < renderedAt &&
+          !["completed", "archived"].includes(item.status),
+      ).length,
+    };
+  }, [assignments, area, renderedAt]);
+  const school = assignments.filter((item) => resolveArea(item) === "school"),
+    ec = assignments.filter((item) => resolveArea(item) === "extracurricular");
+  const completion = totals.total
+    ? Math.round((totals.completed / totals.total) * 100)
+    : 0;
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Stats // telemetry"
+        title="Momentum, not surveillance."
+        description="Use the signal to adjust the plan—not to guilt-trip yourself over Tuesday."
+        action={<AreaFilterControl value={area} onChange={setArea} />}
+      />
+      {error && (
+        <p role="alert" className="text-sm text-danger">
+          {error}
+        </p>
+      )}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {!summary ? (
+          [1, 2, 3, 4].map((key) => <Skeleton key={key} className="h-32" />)
+        ) : (
+          <>
+            <Metric
+              label="Focused this week"
+              value={`${summary.focus.focusedMinutesThisWeek}m`}
+              detail={`${summary.focus.completedSessionsThisWeek} sessions`}
+              icon={Clock3}
+              accent="text-violet-300"
+            />
+            <Metric
+              label={`${area === "all" ? "Combined" : area === "school" ? "School" : "EC"} completed`}
+              value={`${totals.completed}`}
+              detail={`${totals.total} total`}
+              icon={Target}
+              accent={
+                area === "extracurricular" ? "text-amber-300" : "text-accent"
+              }
+            />
+            <Metric
+              label="Overdue"
+              value={`${totals.overdue}`}
+              detail="Needs attention"
+              icon={Award}
+              accent={totals.overdue ? "text-danger" : "text-success"}
+            />
+            <Metric
+              label="Scheduled"
+              value={`${summary.plan.scheduledMinutesThisWeek}m`}
+              detail="This week"
+              icon={Clock3}
+              accent="text-slate-300"
+            />
+          </>
+        )}
+      </div>
+      <div className="grid gap-5 lg:grid-cols-[1.3fr_.7fr]">
+        <Card className="corner-cut border-t-2 border-t-accent">
+          <CardHeader>
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[.14em] text-muted">
+                Completion channel
+              </p>
+              <h2 className="mt-1 text-lg font-semibold">
+                {area === "all"
+                  ? "Combined work"
+                  : area === "school"
+                    ? "Schoolwork"
+                    : "Extracurriculars"}
+              </h2>
+            </div>
+            <span className="font-mono text-2xl font-semibold">
+              {completion}%
+            </span>
+          </CardHeader>
+          <CardContent>
+            <Progress value={completion} />
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <AreaTotal label="School" items={school} />
+              <AreaTotal label="ECs" items={ec} ec />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-l-2 border-l-violet-400">
+          <CardContent>
+            <p className="font-mono text-[10px] uppercase tracking-[.14em] text-muted">
+              Backend totals
+            </p>
+            <p className="mt-4 text-4xl font-bold">
+              {summary?.assignments.completed ?? 0}
+            </p>
+            <p className="mt-1 text-sm text-muted">all-time completed</p>
+            <div className="mt-5 border-t border-border pt-4 text-xs text-muted">
+              <span className="font-mono text-foreground">
+                {summary?.assignments.incomplete ?? 0}
+              </span>{" "}
+              still open ·{" "}
+              <span className="font-mono text-danger">
+                {summary?.assignments.overdue ?? 0}
+              </span>{" "}
+              overdue
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+function Metric({
+  label,
+  value,
+  detail,
+  icon: Icon,
+  accent,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  icon: typeof Clock3;
+  accent: string;
+}) {
+  return (
+    <Card>
+      <CardContent>
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[.14em] text-muted">
+              {label}
+            </p>
+            <p className="mt-3 text-2xl font-bold">{value}</p>
+            <p className="mt-1 text-xs text-muted">{detail}</p>
+          </div>
+          <div
+            className={`grid size-10 place-items-center rounded-md bg-card-strong ${accent}`}
+          >
+            <Icon size={19} />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+function AreaTotal({
+  label,
+  items,
+  ec = false,
+}: {
+  label: string;
+  items: Assignment[];
+  ec?: boolean;
+}) {
+  const done = items.filter((item) => item.status === "completed").length;
+  return (
+    <div
+      className={`border-l-2 bg-card-strong p-3 ${ec ? "border-l-amber-300" : "border-l-accent"}`}
+    >
+      <p
+        className={`font-mono text-[10px] uppercase ${ec ? "text-amber-200" : "text-accent"}`}
+      >
+        {label}
+      </p>
+      <p className="mt-2 text-xl font-semibold">
+        {done}
+        <span className="text-sm text-muted">/{items.length}</span>
+      </p>
+    </div>
+  );
+}

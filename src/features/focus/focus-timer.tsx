@@ -1,21 +1,327 @@
 "use client";
-import {Check,Clock3,FastForward,Pause,Play,RotateCcw} from "lucide-react";
-import {useCallback,useEffect,useMemo,useState} from "react";
-import {Button} from "@/components/ui/button";
-import {Card,CardContent} from "@/components/ui/card";
-import {PageHeader} from "@/components/page-header";
-type TimerState={status:"idle"|"running"|"paused"|"completed"|"skipped";durationMs:number;endAt?:number;pausedRemainingMs?:number};
-const STORAGE_KEY="school-hq-focus-timer-v1";const DEFAULT_MS=25*60*1000;
-const fresh:TimerState={status:"idle",durationMs:DEFAULT_MS,pausedRemainingMs:DEFAULT_MS};
-export function FocusTimer(){const[state,setState]=useState<TimerState>(fresh);const[now,setNow]=useState(()=>Date.now());const[ready,setReady]=useState(false);
-useEffect(()=>{try{const saved=localStorage.getItem(STORAGE_KEY);if(saved)setState(JSON.parse(saved) as TimerState)}finally{setReady(true)}},[]);
-useEffect(()=>{if(ready)localStorage.setItem(STORAGE_KEY,JSON.stringify(state))},[state,ready]);
-useEffect(()=>{if(state.status!=="running")return;const id=window.setInterval(()=>{const current=Date.now();setNow(current);setState(s=>s.status==="running"&&current>=(s.endAt??Infinity)?{...s,status:"completed",pausedRemainingMs:0,endAt:undefined}:s)},250);return()=>window.clearInterval(id)},[state.status]);
-const remaining=Math.max(0,state.status==="running"?(state.endAt??now)-now:state.pausedRemainingMs??state.durationMs);
-const start=useCallback(()=>setState(s=>({...s,status:"running",endAt:Date.now()+(s.pausedRemainingMs??s.durationMs)})),[]);
-const pause=()=>setState(s=>({...s,status:"paused",pausedRemainingMs:Math.max(0,(s.endAt??Date.now())-Date.now()),endAt:undefined}));
-const reset=()=>setState(fresh);const finish=(status:"completed"|"skipped")=>setState(s=>({...s,status,pausedRemainingMs:0,endAt:undefined}));
-const display=useMemo(()=>`${String(Math.floor(remaining/60000)).padStart(2,"0")}:${String(Math.floor((remaining%60000)/1000)).padStart(2,"0")}`,[remaining]);const progress=1-remaining/state.durationMs;
-return <div className="space-y-5"><PageHeader eyebrow="Focus mode" title="One thing. Right now." description="The timer follows real timestamps, so refreshes and route changes cannot steal your time."/>
-<div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]"><Card className="relative overflow-hidden border-accent/20"><div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent to-transparent"/><CardContent className="flex min-h-[500px] flex-col items-center justify-center p-6 text-center"><span className="rounded-full bg-violet-400/10 px-3 py-1 text-xs font-semibold text-violet-300">AP Physics</span><h2 className="mt-5 text-xl font-semibold">Momentum problem set</h2><p className="mt-1 text-sm text-muted">Problems 1–12 · show every step</p><div className="relative my-10 grid size-64 place-items-center sm:size-72"><svg viewBox="0 0 120 120" className="absolute inset-0 -rotate-90" aria-hidden="true"><circle cx="60" cy="60" r="55" fill="none" stroke="var(--card-strong)" strokeWidth="3"/><circle cx="60" cy="60" r="55" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeDasharray="345.6" strokeDashoffset={345.6*(1-progress)} className="transition-[stroke-dashoffset] duration-500"/></svg><div><p aria-live="off" aria-label={`${Math.ceil(remaining/60000)} minutes remaining`} className="font-mono text-6xl font-semibold tracking-[-.08em] tabular-nums sm:text-7xl">{display}</p><p className="mt-3 text-xs uppercase tracking-[.2em] text-muted">{state.status}</p></div></div><div className="flex flex-wrap items-center justify-center gap-3">{state.status==="running"?<Button onClick={pause} className="min-w-32"><Pause size={18}/>Pause</Button>:state.status==="completed"||state.status==="skipped"?<Button onClick={reset}><RotateCcw size={18}/>Start another</Button>:<Button onClick={start} className="min-w-32"><Play size={18}/>{state.status==="paused"?"Resume":"Start"}</Button>}<Button variant="secondary" onClick={()=>finish("skipped")} disabled={state.status==="completed"||state.status==="skipped"}><FastForward size={17}/>Skip</Button><Button variant="secondary" onClick={()=>finish("completed")} disabled={state.status==="completed"}><Check size={17}/>Complete</Button></div></CardContent></Card>
-<aside className="space-y-5"><Card><CardContent><p className="text-xs font-semibold uppercase tracking-[.15em] text-muted">Session brief</p><dl className="mt-4 space-y-4 text-sm"><div className="flex justify-between"><dt className="text-muted">Target</dt><dd>6 problems</dd></div><div className="flex justify-between"><dt className="text-muted">Started</dt><dd>{state.status==="idle"?"Not yet":"7:00 PM"}</dd></div><div className="flex justify-between"><dt className="text-muted">Distractions</dt><dd className="text-success">Blocked</dd></div></dl></CardContent></Card><Card><CardContent><div className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.15em] text-muted">Up next</p><h3 className="mt-2 font-semibold">Revise Gatsby thesis</h3><p className="mt-1 text-sm text-muted">English 11</p></div><div className="grid size-10 place-items-center rounded-xl bg-cyan-400/10 text-cyan-300"><Clock3 size={18}/></div></div><p className="mt-5 font-mono text-sm text-muted">7:55–8:30 PM · 35m</p></CardContent></Card><p className="px-2 text-xs leading-5 text-muted">Closing this tab won&apos;t reset the session. We calculate remaining time from the stored end timestamp.</p></aside></div></div>}
+import {
+  Check,
+  FastForward,
+  LoaderCircle,
+  Pause,
+  Play,
+  RotateCcw,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { AreaBadge, resolveArea } from "@/components/area-filter";
+import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { api } from "@/lib/api-client";
+import type { Assignment, FocusSession } from "@/types/api";
+const STORAGE_KEY = "school-hq-focus-session-v2",
+  DEFAULT_MINUTES = 25;
+type LocalSession = FocusSession & { localPausedRemainingSeconds?: number };
+export function FocusTimer() {
+  const [session, setSession] = useState<LocalSession | null>(null);
+  const [task, setTask] = useState<Assignment | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) setSession(JSON.parse(saved) as LocalSession);
+    } finally {
+      setReady(true);
+    }
+    void api
+      .listAssignments()
+      .then((items) =>
+        setTask(
+          items.find(
+            (item) => !["completed", "archived"].includes(item.status),
+          ) ?? null,
+        ),
+      )
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (ready) {
+      if (session) localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+      else localStorage.removeItem(STORAGE_KEY);
+    }
+  }, [session, ready]);
+  useEffect(() => {
+    if (session?.status !== "running") return;
+    const id = window.setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [session?.status]);
+  const totalSeconds =
+    (session?.plannedDurationMinutes ?? DEFAULT_MINUTES) * 60;
+  const remainingSeconds = Math.max(
+    0,
+    useMemo(() => {
+      if (!session) return totalSeconds;
+      if (session.status === "completed" || session.status === "cancelled")
+        return 0;
+      if (
+        session.status === "paused" &&
+        session.localPausedRemainingSeconds !== undefined
+      )
+        return session.localPausedRemainingSeconds;
+      const endpoint = session.pausedAt ? Date.parse(session.pausedAt) : now;
+      return (
+        totalSeconds -
+        Math.floor((endpoint - Date.parse(session.startedAt)) / 1000) +
+        session.accumulatedPauseSeconds
+      );
+    }, [now, session, totalSeconds]),
+  );
+  const progress = 1 - remainingSeconds / totalSeconds;
+  const display = `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")}`;
+  // The transition reads the latest persisted session snapshot.
+  useEffect(() => {
+    if (session?.status === "running" && remainingSeconds === 0)
+      void transition("complete");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remainingSeconds, session?.status]);
+  async function start() {
+    setBusy(true);
+    try {
+      if (session?.status === "paused") {
+        await transition("resume");
+        return;
+      }
+      const created = await api.createFocusSession({
+        assignmentId: task?.id ?? null,
+        plannedDurationMinutes: DEFAULT_MINUTES,
+        startedAt: new Date().toISOString(),
+      });
+      setSession(created);
+    } catch (reason) {
+      toast.error(
+        reason instanceof Error ? reason.message : "Could not start focus",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function transition(
+    action: "pause" | "resume" | "complete" | "cancel",
+  ) {
+    if (!session) return;
+    setBusy(true);
+    const occurredAt = new Date().toISOString();
+    try {
+      const updated = await api.transitionFocusSession({
+        id: session.id,
+        action,
+        occurredAt,
+      });
+      setSession({
+        ...session,
+        ...updated,
+        status:
+          action === "pause"
+            ? "paused"
+            : action === "resume"
+              ? "running"
+              : action === "complete"
+                ? "completed"
+                : "cancelled",
+        pausedAt:
+          action === "pause"
+            ? occurredAt
+            : action === "resume"
+              ? null
+              : updated.pausedAt,
+        completedAt: action === "complete" ? occurredAt : updated.completedAt,
+        localPausedRemainingSeconds:
+          action === "pause"
+            ? remainingSeconds
+            : action === "resume"
+              ? undefined
+              : remainingSeconds,
+      });
+      if (action === "complete")
+        toast.success("Focus block complete. Nice work.");
+    } catch (reason) {
+      toast.error(
+        reason instanceof Error ? reason.message : "Focus update failed",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  const status = session?.status ?? "idle";
+  const ambient =
+    status === "running"
+      ? "border-violet-400/40 shadow-[0_0_70px_rgba(167,139,250,.09)]"
+      : status === "paused"
+        ? "border-amber-300/35"
+        : status === "completed"
+          ? "border-success/40 shadow-[0_0_60px_rgba(163,230,53,.08)]"
+          : "border-accent/20";
+  const stroke =
+    status === "completed"
+      ? "var(--success)"
+      : status === "paused"
+        ? "var(--ec)"
+        : "var(--accent-2)";
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Focus // active channel"
+        title="One thing. Right now."
+        description="The timer follows persisted server timestamps; refreshes and route changes do not steal time."
+      />
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <Card
+          className={`relative overflow-hidden transition-colors duration-200 ${ambient}`}
+        >
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(167,139,250,.08),transparent_48%)]" />
+          <CardContent className="relative flex min-h-[560px] flex-col items-center justify-center p-6 text-center">
+            {task && <AreaBadge area={resolveArea(task)} />}
+            <p className="mt-5 font-mono text-[10px] uppercase tracking-[.22em] text-muted">
+              Active objective
+            </p>
+            <h2 className="mt-2 max-w-2xl text-2xl font-bold sm:text-4xl">
+              {task?.title ?? "Choose your next task"}
+            </h2>
+            {task && (
+              <p className="mt-2 text-sm text-muted">
+                {task.estimatedMinutes} minute estimate · {task.priority}{" "}
+                priority
+              </p>
+            )}
+            <div className="relative my-9 grid size-64 place-items-center sm:size-80">
+              <svg
+                viewBox="0 0 120 120"
+                className="absolute inset-0 -rotate-90"
+                aria-hidden="true"
+              >
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="53"
+                  fill="none"
+                  stroke="var(--card-strong)"
+                  strokeWidth="5"
+                  strokeDasharray="7 3"
+                />
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="53"
+                  fill="none"
+                  stroke={stroke}
+                  strokeWidth="5"
+                  strokeLinecap="butt"
+                  strokeDasharray="333"
+                  strokeDashoffset={333 * (1 - progress)}
+                  className="transition-[stroke-dashoffset] duration-200"
+                />
+              </svg>
+              <div>
+                <p
+                  aria-live="off"
+                  aria-label={`${Math.ceil(remainingSeconds / 60)} minutes remaining`}
+                  className="font-mono text-6xl font-semibold tracking-[-.08em] tabular-nums sm:text-7xl"
+                >
+                  {display}
+                </p>
+                <p className="mt-3 font-mono text-[10px] uppercase tracking-[.24em] text-muted">
+                  {status}
+                </p>
+              </div>
+              {status === "running" && (
+                <span className="status-pulse absolute right-8 top-12 size-2 rounded-full bg-violet-400" />
+              )}
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              {status === "running" ? (
+                <Button
+                  onClick={() => void transition("pause")}
+                  disabled={busy}
+                  className="min-w-32 bg-violet-400 text-[#100a20] hover:bg-violet-300"
+                >
+                  <Pause size={18} />
+                  Pause
+                </Button>
+              ) : status === "completed" || status === "cancelled" ? (
+                <Button onClick={() => setSession(null)}>
+                  <RotateCcw size={18} />
+                  Start another
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => void start()}
+                  disabled={busy || !task}
+                  className="min-w-32"
+                >
+                  {busy ? (
+                    <LoaderCircle className="animate-spin" size={18} />
+                  ) : (
+                    <Play size={18} />
+                  )}{" "}
+                  {status === "paused" ? "Resume" : "Start"}
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                onClick={() => void transition("cancel")}
+                disabled={
+                  !session || status === "completed" || status === "cancelled"
+                }
+              >
+                <FastForward size={17} />
+                Cancel
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => void transition("complete")}
+                disabled={!session || status === "completed"}
+              >
+                <Check size={17} />
+                Complete
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+        <aside className="space-y-5">
+          <Card className="border-t-2 border-t-violet-400">
+            <CardContent>
+              <p className="font-mono text-[10px] uppercase tracking-[.15em] text-muted">
+                Session telemetry
+              </p>
+              <dl className="mt-4 space-y-4 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-muted">Target</dt>
+                  <dd className="font-mono">{DEFAULT_MINUTES}m</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted">Started</dt>
+                  <dd className="font-mono">
+                    {session
+                      ? new Date(session.startedAt).toLocaleTimeString([], {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })
+                      : "—"}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted">Paused</dt>
+                  <dd className="font-mono">
+                    {session?.accumulatedPauseSeconds ?? 0}s
+                  </dd>
+                </div>
+              </dl>
+            </CardContent>
+          </Card>
+          <p className="px-2 text-xs leading-5 text-muted">
+            Server timestamps are the source of truth. This device stores only
+            enough state to restore the display.
+          </p>
+        </aside>
+      </div>
+    </div>
+  );
+}
