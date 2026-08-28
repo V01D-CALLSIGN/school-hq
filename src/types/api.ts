@@ -1,0 +1,16 @@
+export type ISODateTime=string;
+export type Course={id:string;name:string;color:string};
+export type AssignmentStatus="todo"|"in_progress"|"completed";
+export type Assignment={id:string;title:string;courseId:string;dueAt:ISODateTime|null;estimatedMinutes:number|null;priority:"low"|"medium"|"high";status:AssignmentStatus;confidence?:Record<string,number>};
+export type AssignmentDraft=Omit<Assignment,"id"|"status">;
+export type CalendarEvent={id:string;title:string;startsAt:ISODateTime;endsAt:ISODateTime;kind:"class"|"busy"|"study_window"|"study_block"|"completed"|"ignored";courseId?:string;recurrenceId?:string};
+export type StudyWindow={id:string;startsAt:ISODateTime;endsAt:ISODateTime;source:"manual"|"calendar"};
+export type PlanBlock={id:string;assignmentId?:string;title:string;courseId?:string;startsAt:ISODateTime;endsAt:ISODateTime;status:"planned"|"active"|"completed"|"skipped"};
+export type StudyPlan={id:string;date:string;blocks:PlanBlock[];generatedAt:ISODateTime};
+export type FocusSession={id:string;planBlockId?:string;assignmentId?:string;startedAt:ISODateTime;endsAt:ISODateTime;pausedAt?:ISODateTime;pausedRemainingMs?:number;status:"running"|"paused"|"completed"|"skipped"};
+export type BrainDumpParseRequest={text:string;timezone:string};
+export type BrainDumpParseResponse={assignments:AssignmentDraft[];warnings:string[]};
+export type CalendarImportResponse={events:CalendarEvent[];warnings:string[]};
+export type ApiErrorCode="UNAUTHORIZED"|"OFFLINE"|"VALIDATION_ERROR"|"RATE_LIMITED"|"SERVER_ERROR";
+export type ApiErrorBody={code:ApiErrorCode;message:string;fieldErrors?:Record<string,string>;retryAfterSeconds?:number};
+export class ApiError extends Error{constructor(public status:number,public body:ApiErrorBody){super(body.message);this.name="ApiError"}}

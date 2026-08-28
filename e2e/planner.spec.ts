@@ -1,0 +1,2 @@
+import {test,expect} from "@playwright/test";
+test("brain dump to review to plan",async({page})=>{await page.goto("/planner");await page.getByRole("button",{name:/parse brain dump/i}).click();await expect(page.getByRole("heading",{name:/review the details/i})).toBeVisible();await page.getByRole("button",{name:/confirm and generate plan/i}).click();await expect(page.getByRole("heading",{name:/your night, mapped/i})).toBeVisible();await expect(page.getByRole("button",{name:/use this plan/i})).toBeVisible()});
