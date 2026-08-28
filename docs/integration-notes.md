@@ -19,6 +19,16 @@ Decisions:
 - Focus-session PATCH accepts `{ id, action, occurredAt? }`, where action is `pause`, `resume`, `complete`, or `cancel`. The client computes countdown state from timestamps and `accumulatedPauseSeconds`.
 - Stats currently summarize all-time assignment counts and current-week focus/planning totals. Week boundaries use the requested `timezone`.
 
-Environment variables are documented in `.env.example`. `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are intentionally public; `OPENAI_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are server-only.
+Environment variables are documented in `.env.example`. `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are intentionally public; `OLLAMA_BASE_URL`, `OPENAI_API_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are server-only configuration.
 
 Remaining frontend integration: supply Supabase session cookies or a Bearer access token; implement parsed-assignment review; upload calendars as multipart; render unscheduled reason codes; and drive timers from persisted timestamps.
+
+## 2026-08-28 — Ollama becomes the primary real-use parser
+
+- `BrainDump.parser` now accepts `mock | ollama | openai`.
+- Tests use `mock` when no provider is specified. Non-test server environments default to `ollama`; `.env.example` makes that choice explicit.
+- Default Ollama configuration is `http://127.0.0.1:11434` with `qwen3.5:4b`.
+- Ollama is contacted exclusively by the Next.js route handler. Frontend code must continue calling `POST /api/brain-dumps/parse` and must never call the Ollama URL.
+- The Ollama adapter checks server/model health, applies the existing timeout and Zod/JSON Schema validation, and retries one complete attempt for transient, timeout, or malformed-output failures. A confirmed missing model is not retried.
+- Stable errors added: `OLLAMA_UNAVAILABLE`, `OLLAMA_MODEL_UNAVAILABLE`, `PARSER_TIMEOUT`, and `PARSER_INVALID_RESPONSE`.
+- OpenAI remains supported but optional; no OpenAI environment variable is required unless `BRAIN_DUMP_PARSER=openai` is selected.

@@ -60,7 +60,7 @@ export const brainDumpSchema = z.object({
   rawText: z.string().min(1).max(12000),
   timezone: timezoneSchema,
   parsedAssignments: z.array(parsedAssignmentSchema),
-  parser: z.enum(["mock", "openai"]),
+  parser: z.enum(["mock", "ollama", "openai"]),
   createdAt: isoDateTimeSchema,
 });
 

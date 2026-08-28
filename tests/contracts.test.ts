@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBrainDumpInputSchema, schedulingPreferencesSchema, studyWindowSchema } from "@/lib/contracts";
+import { brainDumpSchema, parseBrainDumpInputSchema, schedulingPreferencesSchema, studyWindowSchema } from "@/lib/contracts";
 
 describe("shared schemas", () => {
   it("rejects invalid IANA timezones", () => {
@@ -17,5 +17,9 @@ describe("shared schemas", () => {
 
   it("applies scheduling defaults", () => {
     expect(schedulingPreferencesSchema.parse({ timezone: "America/Chicago" }).defaultBlockMinutes).toBe(45);
+  });
+
+  it("accepts Ollama as a persisted parser provider", () => {
+    expect(brainDumpSchema.shape.parser.parse("ollama")).toBe("ollama");
   });
 });

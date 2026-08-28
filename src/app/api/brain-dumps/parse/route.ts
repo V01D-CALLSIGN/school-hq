@@ -1,5 +1,5 @@
 import { parseBrainDumpInputSchema, success, type BrainDump } from "@/lib/contracts";
-import { MockBrainDumpParser, OpenAIBrainDumpParser } from "@/lib/brain-dump/parser";
+import { MockBrainDumpParser, OllamaBrainDumpParser, OpenAIBrainDumpParser } from "@/lib/brain-dump/parser";
 import { requireAuth } from "@/lib/server/auth";
 import { camelize, assertDb } from "@/lib/server/db";
 import { getServerEnv } from "@/lib/server/env";
@@ -20,7 +20,9 @@ export async function POST(request: Request): Promise<Response> {
     }
     const parser = env.BRAIN_DUMP_PARSER === "openai"
       ? new OpenAIBrainDumpParser({ apiKey: env.OPENAI_API_KEY!, model: env.OPENAI_MODEL, timeoutMs: env.BRAIN_DUMP_TIMEOUT_MS })
-      : new MockBrainDumpParser();
+      : env.BRAIN_DUMP_PARSER === "ollama"
+        ? new OllamaBrainDumpParser({ baseUrl: env.OLLAMA_BASE_URL, model: env.OLLAMA_MODEL, timeoutMs: env.BRAIN_DUMP_TIMEOUT_MS })
+        : new MockBrainDumpParser();
     const parsedAssignments = await parser.parse(input);
     const row = assertDb(await supabase.from("brain_dumps").insert({
       user_id: user.id, raw_text: input.text, timezone: input.timezone,
