@@ -64,6 +64,10 @@ where relnamespace = 'public'::regnamespace
 
 Every listed row must report `relrowsecurity = true`. Requests use the authenticated user's JWT; route handlers never accept `user_id` from request bodies.
 
+### Native client access
+
+The Capacitor iOS app calls this API directly instead of going through the frontend's same-origin rewrite. `src/proxy.ts` handles API preflight requests and permits the native `capacitor://localhost` origin by default. Set `CORS_ALLOWED_ORIGINS` to a comma-separated allow list when additional native or web clients need direct access. CORS does not replace API authentication; protected routes still require the Supabase bearer token.
+
 ## API
 
 All endpoints return either `{ ok: true, data }` or `{ ok: false, error: { code, message, fields? } }`.
