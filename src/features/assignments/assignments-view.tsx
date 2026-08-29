@@ -1,5 +1,5 @@
 "use client";
-import { Check, Filter, LoaderCircle, Plus, Search } from "lucide-react";
+import { Check, Filter, LoaderCircle, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   AreaBadge,
@@ -22,12 +22,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api-client";
-import { isMockMode } from "@/lib/supabase/client";
-import { activityPlaceholder, courses } from "@/mocks/data";
-import type { Assignment, WorkArea } from "@/types/api";
+import type { Assignment, Course, WorkArea } from "@/types/api";
 
 export function AssignmentsView() {
   const [items, setItems] = useState<Assignment[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"all" | "open" | "completed">("all");
   const [area, setArea] = useAreaFilter();
@@ -37,14 +36,17 @@ export function AssignmentsView() {
   const [draft, setDraft] = useState({
     title: "",
     area: "school" as WorkArea,
-    context: "",
+    courseId: "",
+    activityLabel: "",
     dueAt: "",
     estimatedMinutes: 30,
   });
   useEffect(() => {
-    void api
-      .listAssignments()
-      .then(setItems)
+    void Promise.all([api.listAssignments(), api.listCourses()])
+      .then(([nextItems, nextCourses]) => {
+        setItems(nextItems);
+        setCourses(nextCourses);
+      })
       .catch((reason: Error) => setError(reason.message))
       .finally(() => setLoading(false));
   }, []);
@@ -63,13 +65,9 @@ export function AssignmentsView() {
   );
   const contextFor = (item: Assignment) =>
     resolveArea(item) === "extracurricular"
-      ? (item.activityName ?? "Extracurricular")
-      : isMockMode()
-        ? (courses.find((course) => course.id === item.courseId)?.name ??
-          "No course")
-        : item.courseId
-          ? "Course assigned"
-          : "No course";
+      ? (item.activityLabel ?? "Extracurricular")
+      : (courses.find((course) => course.id === item.courseId)?.name ??
+        "No course");
   async function add() {
     if (!draft.title.trim()) return;
     setLoading(true);
@@ -77,34 +75,26 @@ export function AssignmentsView() {
       const created = await api.createAssignment({
         title: draft.title.trim(),
         area: draft.area,
-        activityName:
-          draft.area === "extracurricular" ? draft.context || null : null,
-        courseId:
-          draft.area === "school" && isMockMode() ? courses[0].id : null,
+        activityLabel:
+          draft.area === "extracurricular"
+            ? draft.activityLabel.trim() || null
+            : null,
+        courseId: draft.area === "school" ? draft.courseId || null : null,
         dueAt: draft.dueAt ? new Date(draft.dueAt).toISOString() : null,
         estimatedMinutes: draft.estimatedMinutes,
         priority: "medium",
         taskType: "assignment",
         dependencyIds: [],
-        notes:
-          draft.area === "school" && draft.context
-            ? `Course: ${draft.context}`
-            : null,
+        notes: null,
         status: "confirmed",
       });
-      setItems((current) => [
-        {
-          ...created,
-          area: created.area ?? draft.area,
-          activityName: created.activityName ?? (draft.context || null),
-        },
-        ...current,
-      ]);
+      setItems((current) => [created, ...current]);
       setAdding(false);
       setDraft({
         title: "",
         area: "school",
-        context: "",
+        courseId: "",
+        activityLabel: "",
         dueAt: "",
         estimatedMinutes: 30,
       });
@@ -130,6 +120,16 @@ export function AssignmentsView() {
         current.map((value) => (value.id === item.id ? item : value)),
       );
       setError(reason instanceof Error ? reason.message : "Update failed.");
+    }
+  }
+  async function remove(item: Assignment) {
+    const previous = items;
+    setItems((current) => current.filter((value) => value.id !== item.id));
+    try {
+      await api.deleteAssignment(item.id);
+    } catch (reason) {
+      setItems(previous);
+      setError(reason instanceof Error ? reason.message : "Delete failed.");
     }
   }
   return (
@@ -189,7 +189,7 @@ export function AssignmentsView() {
             visible.map((item) => (
               <div
                 key={item.id}
-                className="grid grid-cols-[36px_1fr_auto] items-center gap-3 border-b border-border p-4 last:border-0 sm:grid-cols-[40px_1fr_130px_auto]"
+                className="grid grid-cols-[36px_1fr_auto_auto] items-center gap-3 border-b border-border p-4 last:border-0 sm:grid-cols-[40px_1fr_130px_auto_auto]"
               >
                 <button
                   aria-label={
@@ -233,6 +233,14 @@ export function AssignmentsView() {
                 >
                   {item.priority}
                 </Badge>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Delete ${item.title}`}
+                  onClick={() => void remove(item)}
+                >
+                  <Trash2 size={15} />
+                </Button>
               </div>
             ))
           ) : (
@@ -285,25 +293,42 @@ export function AssignmentsView() {
                 ))}
               </div>
             </fieldset>
-            <label className="block text-xs font-semibold text-muted">
-              {draft.area === "school"
-                ? "Course (optional)"
-                : "Activity, club, team, or project"}
-              <Input
-                value={draft.context}
-                onChange={(event) =>
-                  setDraft({ ...draft, context: event.target.value })
-                }
-                className="mt-1.5"
-                placeholder={
-                  draft.area === "school"
-                    ? "Course"
-                    : isMockMode()
-                      ? activityPlaceholder
-                      : "Activity name"
-                }
-              />
-            </label>
+            {draft.area === "school" ? (
+              <label className="block text-xs font-semibold text-muted">
+                Course (optional)
+                <select
+                  className="input mt-1.5"
+                  value={draft.courseId}
+                  onChange={(event) =>
+                    setDraft({ ...draft, courseId: event.target.value })
+                  }
+                >
+                  <option value="">No course</option>
+                  {courses.map((course) => (
+                    <option key={course.id} value={course.id}>
+                      {course.name}
+                    </option>
+                  ))}
+                </select>
+                {!courses.length && (
+                  <span className="mt-1 block font-normal text-muted">
+                    Add courses from Settings when you need them.
+                  </span>
+                )}
+              </label>
+            ) : (
+              <label className="block text-xs font-semibold text-muted">
+                Activity, club, team, or project
+                <Input
+                  value={draft.activityLabel}
+                  onChange={(event) =>
+                    setDraft({ ...draft, activityLabel: event.target.value })
+                  }
+                  className="mt-1.5"
+                  placeholder="Activity name"
+                />
+              </label>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs font-semibold text-muted">
                 Due

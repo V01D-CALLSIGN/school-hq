@@ -8,11 +8,10 @@ School HQ is a Next.js App Router PWA with a customized editable shadcn/ui layer
 - `src/features`: authenticated product surfaces and Supabase login/session flow.
 - `src/components/ui`: genuine local shadcn/Radix source components configured by `components.json`.
 - `src/components/area-filter.tsx`: persisted All/School/EC filtering and compact area badges.
-- `src/types/api.ts`: frontend-safe copy of the inspected backend DTOs, plus isolated optional area extensions pending backend support.
-- `src/lib/api-client.ts`: same-origin HTTP boundary, response-envelope unwrapping, bearer auth, and deterministic mock adapter.
-- `src/mocks`: all fabricated assignments, EC activities, calendar events, plans, parser output, and stats.
+- `src/types/api.ts`: frontend-safe copy of the backend DTOs.
+- `src/lib/api-client.ts`: HTTP boundary, response-envelope unwrapping, and bearer authentication.
 
-Authenticated routes are protected by the Supabase session provider in real mode. API authorization is enforced independently by the backend. Sign-out terminates the local Supabase session, clears timer state, and instructs the service worker to clear its caches.
+Authenticated routes are protected by the Supabase session provider. API authorization is enforced independently by the backend. Sign-out terminates the local Supabase session, clears timer state, and instructs the service worker to clear its caches.
 
 The Capacitor build sets `CAPACITOR_BUILD=true`, exports every route into `out`, and copies that static bundle into the generated iOS project. Native requests use the public HTTPS `NEXT_PUBLIC_API_URL` instead of the web deployment's server-side rewrite. The iOS URL scheme `schoolhq://auth/callback` returns Supabase PKCE magic-link authentication to the app; the native runtime exchanges the one-time code using the verifier held by the originating WebView.
 

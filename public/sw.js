@@ -1,4 +1,4 @@
-const CACHE = "school-hq-shell-v3";
+const CACHE = "school-hq-shell-v4";
 const SHELL = ["/", "/assignments", "/calendar", "/planner", "/focus", "/stats", "/settings", "/login", "/icons/icon-192.png", "/icons/icon-512.png"];
 const isAuthRequest = (url) => url.pathname === "/login" || url.pathname.includes("/auth/") || url.pathname.includes("session");
 const isStaticAsset = (url) => url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icons/") || /\.(?:css|js|woff2?|png|svg|ico)$/.test(url.pathname);

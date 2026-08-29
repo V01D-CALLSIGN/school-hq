@@ -10,7 +10,6 @@ const success = <T>(data: T, status = 200) =>
   });
 describe("backend contract client", () => {
   beforeEach(() => {
-    vi.stubEnv("NEXT_PUBLIC_USE_MOCK_API", "false");
     vi.stubGlobal("fetch", vi.fn());
   });
   afterEach(() => {
@@ -60,7 +59,7 @@ describe("backend contract client", () => {
       rangeEnd: "2026-08-29T00:00:00-05:00",
       timezone: "America/Chicago",
     };
-    await api.generatePlan(input, "extracurricular");
+    await api.generatePlan({ ...input, area: "extracurricular" });
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))).toEqual(
       { ...input, area: "extracurricular" },
     );

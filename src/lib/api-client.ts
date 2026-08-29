@@ -1,10 +1,3 @@
-import {
-  assignments,
-  brainDump,
-  calendarEvents,
-  plan,
-  statsSummary,
-} from "@/mocks/data";
 import { getAccessToken } from "@/lib/supabase/client";
 import {
   ApiError,
@@ -16,22 +9,27 @@ import {
   type CalendarClassification,
   type CalendarEvent,
   type CalendarImportResponse,
+  type Course,
   type CreateAssignmentInput,
+  type CreateCalendarEventInput,
+  type CreateCourseInput,
   type CreateFocusSessionInput,
   type CreateStudyWindowInput,
   type FocusSession,
   type FocusTransitionInput,
   type GeneratePlanInput,
+  type SchedulingPreferences,
   type StatsSummary,
   type StudyPlan,
   type StudyWindow,
   type UpdateAssignmentInput,
+  type UpdateCalendarEventInput,
+  type UpdateCourseInput,
   type UpdatePlanInput,
+  type UpdateSchedulingPreferencesInput,
   type UpdateStudyWindowInput,
 } from "@/types/api";
 
-const wait = (ms = 120) => new Promise((resolve) => setTimeout(resolve, ms));
-const mockEnabled = () => process.env.NEXT_PUBLIC_USE_MOCK_API !== "false";
 const apiBaseUrl = () =>
   (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
 
@@ -70,6 +68,7 @@ function categoryFor(code: string, status: number): ApiError["category"] {
   if (code === "OFFLINE" || status === 0) return "offline";
   return "server";
 }
+
 function fallbackFailure(status: number): ApiFailure {
   const code =
     status === 401
@@ -95,7 +94,6 @@ export async function apiRequest<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  if (mockEnabled()) return mockRequest<T>(path, init);
   try {
     const token = await getAccessToken();
     const headers = new Headers(init.headers);
@@ -106,8 +104,7 @@ export async function apiRequest<T>(
     )
       headers.set("Content-Type", "application/json");
     if (token) headers.set("Authorization", `Bearer ${token}`);
-    const requestUrl = resolveApiUrl(path);
-    const response = await fetch(requestUrl, {
+    const response = await fetch(resolveApiUrl(path), {
       ...init,
       headers,
       credentials: apiBaseUrl() ? "omit" : "same-origin",
@@ -142,76 +139,6 @@ export async function apiRequest<T>(
   }
 }
 
-async function mockRequest<T>(path: string, init: RequestInit): Promise<T> {
-  await wait();
-  const method = init.method ?? "GET";
-  const json = () => JSON.parse(String(init.body ?? "{}"));
-  if (path === "/api/brain-dumps/parse") return brainDump as T;
-  if (path.startsWith("/api/assignments")) {
-    if (method === "GET") return assignments as T;
-    if (method === "DELETE") return { id: json().id } as T;
-    if (method === "PATCH")
-      return {
-        ...assignments.find((item) => item.id === json().id),
-        ...json(),
-      } as T;
-    return {
-      ...assignments[0],
-      ...json(),
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    } as T;
-  }
-  if (path === "/api/calendar/import")
-    return {
-      import: {
-        id: "import-1",
-        sourceName: "calendar.ics",
-        sourceHash: "mock",
-        importedAt: new Date().toISOString(),
-        eventCount: calendarEvents.length,
-      },
-      events: calendarEvents,
-    } as T;
-  if (path.startsWith("/api/calendar/week")) return calendarEvents as T;
-  if (path.startsWith("/api/study-windows"))
-    return (method === "GET" ? [] : json()) as T;
-  if (path === "/api/plans/generate" || path.startsWith("/api/plans/"))
-    return plan as T;
-  if (path === "/api/focus-sessions") {
-    const body = json();
-    const transitions = {
-      pause: "paused",
-      resume: "running",
-      complete: "completed",
-      cancel: "cancelled",
-    } as const;
-    return {
-      id: body.id ?? "focus-1",
-      assignmentId: null,
-      planBlockId: null,
-      status:
-        method === "PATCH"
-          ? transitions[body.action as FocusTransitionInput["action"]]
-          : "running",
-      startedAt: new Date().toISOString(),
-      pausedAt: null,
-      completedAt: null,
-      accumulatedPauseSeconds: 0,
-      plannedDurationMinutes: body.plannedDurationMinutes ?? 25,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    } as T;
-  }
-  if (path.startsWith("/api/stats/summary")) return statsSummary as T;
-  throw new ApiError(
-    404,
-    "MOCK_NOT_FOUND",
-    `No mock handler for ${method} ${path}`,
-  );
-}
-
 const query = (values: Record<string, string | undefined>) => {
   const params = new URLSearchParams();
   Object.entries(values).forEach(([key, value]) => {
@@ -219,28 +146,29 @@ const query = (values: Record<string, string | undefined>) => {
   });
   return params.toString();
 };
+
+const jsonRequest = <T>(path: string, method: string, body: unknown) =>
+  apiRequest<T>(path, { method, body: JSON.stringify(body) });
+
 export const api = {
+  listCourses: () => apiRequest<Course[]>("/api/courses"),
+  createCourse: (body: CreateCourseInput) =>
+    jsonRequest<Course>("/api/courses", "POST", body),
+  patchCourse: (body: UpdateCourseInput) =>
+    jsonRequest<Course>("/api/courses", "PATCH", body),
+  deleteCourse: (id: string) =>
+    jsonRequest<{ id: string }>("/api/courses", "DELETE", { id }),
+
   parseBrainDump: (body: BrainDumpParseInput) =>
-    apiRequest<BrainDump>("/api/brain-dumps/parse", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    jsonRequest<BrainDump>("/api/brain-dumps/parse", "POST", body),
   listAssignments: () => apiRequest<Assignment[]>("/api/assignments"),
   createAssignment: (body: CreateAssignmentInput) =>
-    apiRequest<Assignment>("/api/assignments", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    jsonRequest<Assignment>("/api/assignments", "POST", body),
   patchAssignment: (body: UpdateAssignmentInput) =>
-    apiRequest<Assignment>("/api/assignments", {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    }),
+    jsonRequest<Assignment>("/api/assignments", "PATCH", body),
   deleteAssignment: (id: string) =>
-    apiRequest<{ id: string }>("/api/assignments", {
-      method: "DELETE",
-      body: JSON.stringify({ id }),
-    }),
+    jsonRequest<{ id: string }>("/api/assignments", "DELETE", { id }),
+
   importCalendar: (
     file: File,
     classification: CalendarClassification,
@@ -259,47 +187,43 @@ export const api = {
     apiRequest<CalendarEvent[]>(
       `/api/calendar/week?${query({ start, timezone })}`,
     ),
+  createCalendarEvent: (body: CreateCalendarEventInput) =>
+    jsonRequest<CalendarEvent>("/api/calendar/events", "POST", body),
+  patchCalendarEvent: (body: UpdateCalendarEventInput) =>
+    jsonRequest<CalendarEvent>("/api/calendar/events", "PATCH", body),
+  deleteCalendarEvent: (id: string) =>
+    jsonRequest<{ id: string }>("/api/calendar/events", "DELETE", { id }),
+
   listStudyWindows: (from?: string, to?: string) =>
     apiRequest<StudyWindow[]>(`/api/study-windows?${query({ from, to })}`),
   createStudyWindow: (body: CreateStudyWindowInput) =>
-    apiRequest<StudyWindow>("/api/study-windows", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    jsonRequest<StudyWindow>("/api/study-windows", "POST", body),
   patchStudyWindow: (body: UpdateStudyWindowInput) =>
-    apiRequest<StudyWindow>("/api/study-windows", {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    }),
+    jsonRequest<StudyWindow>("/api/study-windows", "PATCH", body),
   deleteStudyWindow: (id: string) =>
-    apiRequest<{ id: string }>("/api/study-windows", {
-      method: "DELETE",
-      body: JSON.stringify({ id }),
-    }),
-  generatePlan: (
-    body: GeneratePlanInput,
-    area?: "all" | "school" | "extracurricular",
-  ) =>
-    apiRequest<StudyPlan>("/api/plans/generate", {
-      method: "POST",
-      body: JSON.stringify(area ? { ...body, area } : body),
-    }),
+    jsonRequest<{ id: string }>("/api/study-windows", "DELETE", { id }),
+
+  generatePlan: (body: GeneratePlanInput) =>
+    jsonRequest<StudyPlan>("/api/plans/generate", "POST", body),
   getPlan: (id: string) => apiRequest<StudyPlan>(`/api/plans/${id}`),
   patchPlan: (id: string, body: UpdatePlanInput) =>
-    apiRequest<StudyPlan>(`/api/plans/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    }),
+    jsonRequest<StudyPlan>(`/api/plans/${id}`, "PATCH", body),
+
+  getActiveFocusSession: () =>
+    apiRequest<FocusSession | null>("/api/focus-sessions"),
   createFocusSession: (body: CreateFocusSessionInput) =>
-    apiRequest<FocusSession>("/api/focus-sessions", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    jsonRequest<FocusSession>("/api/focus-sessions", "POST", body),
   transitionFocusSession: (body: FocusTransitionInput) =>
-    apiRequest<FocusSession>("/api/focus-sessions", {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    }),
+    jsonRequest<FocusSession>("/api/focus-sessions", "PATCH", body),
+
   getStats: (timezone: string) =>
     apiRequest<StatsSummary>(`/api/stats/summary?${query({ timezone })}`),
+  getSchedulingPreferences: () =>
+    apiRequest<SchedulingPreferences>("/api/scheduling-preferences"),
+  patchSchedulingPreferences: (body: UpdateSchedulingPreferencesInput) =>
+    jsonRequest<SchedulingPreferences>(
+      "/api/scheduling-preferences",
+      "PATCH",
+      body,
+    ),
 };

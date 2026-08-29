@@ -12,9 +12,6 @@ export function getAuthRedirectUrl() {
 }
 
 let client: SupabaseClient | null = null;
-export function isMockMode() {
-  return process.env.NEXT_PUBLIC_USE_MOCK_API !== "false";
-}
 export function isSupabaseConfigured() {
   return Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&

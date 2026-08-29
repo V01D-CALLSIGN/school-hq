@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { ArrowRight, Check, LoaderCircle } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { BrandMark } from "@/components/brand-mark";
@@ -7,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import {
   getSupabaseBrowserClient,
   getAuthRedirectUrl,
-  isMockMode,
   isSupabaseConfigured,
 } from "@/lib/supabase/client";
 export function LoginForm() {
@@ -19,11 +17,6 @@ export function LoginForm() {
     event.preventDefault();
     setLoading(true);
     setError("");
-    if (isMockMode()) {
-      setLoading(false);
-      setSent(true);
-      return;
-    }
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
       setError("Supabase is not configured. Add the public URL and anon key.");
@@ -122,9 +115,7 @@ export function LoginForm() {
                 )}
                 <Button
                   className="w-full"
-                  disabled={
-                    loading || (!isMockMode() && !isSupabaseConfigured())
-                  }
+                  disabled={loading || !isSupabaseConfigured()}
                 >
                   {loading ? (
                     <LoaderCircle className="animate-spin" size={17} />
@@ -135,18 +126,6 @@ export function LoginForm() {
                   )}
                 </Button>
               </form>
-              {isMockMode() && (
-                <>
-                  <div className="my-7 flex items-center gap-3 text-xs text-muted">
-                    <span className="h-px flex-1 bg-border" />
-                    mock mode
-                    <span className="h-px flex-1 bg-border" />
-                  </div>
-                  <Button variant="secondary" className="w-full" asChild>
-                    <Link href="/">Preview the dashboard</Link>
-                  </Button>
-                </>
-              )}
             </>
           )}
         </div>

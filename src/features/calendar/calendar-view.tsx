@@ -5,6 +5,7 @@ import {
   ChevronRight,
   FileUp,
   LoaderCircle,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -27,7 +28,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
-import { isMockMode } from "@/lib/supabase/client";
 import type {
   CalendarClassification,
   CalendarEvent,
@@ -62,6 +62,13 @@ export function CalendarView() {
   const [classification, setClassification] =
     useState<CalendarClassification>("busy");
   const [importArea, setImportArea] = useState<WorkArea>("school");
+  const [manual, setManual] = useState({
+    title: "",
+    startsAt: "",
+    endsAt: "",
+    area: "school" as WorkArea,
+    classification: "busy" as CalendarClassification,
+  });
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const days = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(week);
@@ -85,12 +92,7 @@ export function CalendarView() {
     setLoading(true);
     try {
       const result = await api.importCalendar(file, classification, importArea);
-      setEvents(
-        result.events.map((event) => ({
-          ...event,
-          area: event.area ?? importArea,
-        })),
-      );
+      setEvents(await api.getCalendarWeek(week.toISOString(), timezone));
       setUploadOpen(false);
       setFile(null);
       toast.success(`${result.import.eventCount} events imported`);
@@ -98,6 +100,48 @@ export function CalendarView() {
       toast.error(reason instanceof Error ? reason.message : "Import failed");
     } finally {
       setLoading(false);
+    }
+  }
+  async function addManualEvent() {
+    if (!manual.title.trim() || !manual.startsAt || !manual.endsAt) return;
+    setLoading(true);
+    try {
+      const created = await api.createCalendarEvent({
+        title: manual.title.trim(),
+        description: null,
+        location: null,
+        startsAt: new Date(manual.startsAt).toISOString(),
+        endsAt: new Date(manual.endsAt).toISOString(),
+        allDay: false,
+        classification: manual.classification,
+        area: manual.area,
+        originalTimezone: timezone,
+      });
+      setEvents((current) => [...current, created]);
+      setManual({
+        title: "",
+        startsAt: "",
+        endsAt: "",
+        area: "school",
+        classification: "busy",
+      });
+      setManualOpen(false);
+      toast.success("Event saved");
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : "Could not save event");
+    } finally {
+      setLoading(false);
+    }
+  }
+  async function removeEvent(event: CalendarEvent) {
+    const previous = events;
+    setEvents((current) => current.filter((item) => item.id !== event.id));
+    try {
+      await api.deleteCalendarEvent(event.id);
+      toast.success("Event removed");
+    } catch (reason) {
+      setEvents(previous);
+      toast.error(reason instanceof Error ? reason.message : "Could not remove event");
     }
   }
   return (
@@ -184,7 +228,11 @@ export function CalendarView() {
                 days[selected].toDateString(),
             )
             .map((event) => (
-              <EventCard key={event.id} event={event} />
+              <EventCard
+                key={event.id}
+                event={event}
+                onDelete={() => void removeEvent(event)}
+              />
             ))}
           {!loading &&
             !visible.some(
@@ -261,6 +309,14 @@ export function CalendarView() {
                       style={{ top, height }}
                     >
                       <strong className="block truncate">{event.title}</strong>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${event.title}`}
+                        className="absolute right-1 top-1 rounded p-0.5 opacity-60 hover:opacity-100"
+                        onClick={() => void removeEvent(event)}
+                      >
+                        <Trash2 size={11} />
+                      </button>
                       <span className="font-mono opacity-75">
                         {start.toLocaleTimeString([], {
                           hour: "numeric",
@@ -346,35 +402,84 @@ export function CalendarView() {
           <DialogHeader>
             <DialogTitle>Manual calendar event</DialogTitle>
             <DialogDescription>
-              {isMockMode()
-                ? "Choose an area for this local test event."
-                : "The backend does not expose a manual calendar-event endpoint yet."}
+              Add a commitment or available study window to your calendar.
             </DialogDescription>
           </DialogHeader>
           <div className="mt-5 grid gap-3">
-            <Input placeholder="Event title" disabled={!isMockMode()} />
+            <Input
+              placeholder="Event title"
+              value={manual.title}
+              onChange={(event) =>
+                setManual({ ...manual, title: event.target.value })
+              }
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs font-semibold text-muted">
+                Starts
+                <Input
+                  type="datetime-local"
+                  className="mt-1.5"
+                  value={manual.startsAt}
+                  onChange={(event) =>
+                    setManual({ ...manual, startsAt: event.target.value })
+                  }
+                />
+              </label>
+              <label className="text-xs font-semibold text-muted">
+                Ends
+                <Input
+                  type="datetime-local"
+                  className="mt-1.5"
+                  value={manual.endsAt}
+                  onChange={(event) =>
+                    setManual({ ...manual, endsAt: event.target.value })
+                  }
+                />
+              </label>
+            </div>
             <Choice
               label="Area"
-              value={importArea}
-              setValue={(value) => setImportArea(value as WorkArea)}
+              value={manual.area}
+              setValue={(value) =>
+                setManual({ ...manual, area: value as WorkArea })
+              }
               options={[
                 ["school", "School"],
                 ["extracurricular", "EC"],
               ]}
             />
+            <Choice
+              label="Classification"
+              value={manual.classification}
+              setValue={(value) =>
+                setManual({
+                  ...manual,
+                  classification: value as CalendarClassification,
+                })
+              }
+              options={[
+                ["busy", "Busy"],
+                ["study_available", "Available to study"],
+                ["ignored", "Ignored"],
+              ]}
+            />
           </div>
           <DialogFooter className="mt-5">
             <Button variant="ghost" onClick={() => setManualOpen(false)}>
-              Close
+              Cancel
             </Button>
             <Button
-              disabled={!isMockMode()}
-              onClick={() => {
-                toast.success("Mock event added");
-                setManualOpen(false);
-              }}
+              disabled={
+                loading ||
+                !manual.title.trim() ||
+                !manual.startsAt ||
+                !manual.endsAt ||
+                Date.parse(manual.endsAt) <= Date.parse(manual.startsAt)
+              }
+              onClick={() => void addManualEvent()}
             >
-              Add event
+              {loading && <LoaderCircle className="animate-spin" size={16} />}
+              Save event
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -382,7 +487,13 @@ export function CalendarView() {
     </div>
   );
 }
-function EventCard({ event }: { event: CalendarEvent }) {
+function EventCard({
+  event,
+  onDelete,
+}: {
+  event: CalendarEvent;
+  onDelete: () => void;
+}) {
   const start = new Date(event.startsAt),
     end = new Date(event.endsAt);
   return (
@@ -392,6 +503,14 @@ function EventCard({ event }: { event: CalendarEvent }) {
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-semibold">{event.title}</p>
         <AreaBadge area={resolveArea(event)} />
+        <button
+          type="button"
+          aria-label={`Delete ${event.title}`}
+          onClick={onDelete}
+          className="text-muted hover:text-danger"
+        >
+          <Trash2 size={15} />
+        </button>
       </div>
       <p className="mt-2 font-mono text-xs opacity-75">
         {start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}—

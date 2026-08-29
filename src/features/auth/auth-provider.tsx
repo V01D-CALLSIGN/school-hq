@@ -5,7 +5,6 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import {
   getSupabaseBrowserClient,
-  isMockMode,
   isSupabaseConfigured,
 } from "@/lib/supabase/client";
 type AuthValue = {
@@ -20,14 +19,13 @@ const AuthContext = createContext<AuthValue>({
 });
 export const useAuth = () => useContext(AuthContext);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const mock = isMockMode();
   const configured = isSupabaseConfigured();
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(!mock && configured);
+  const [loading, setLoading] = useState(configured);
   const pathname = usePathname();
   const router = useRouter();
   useEffect(() => {
-    if (mock || !configured) return;
+    if (!configured) return;
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
     void supabase.auth.getSession().then(({ data }) => {
@@ -39,13 +37,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
     return () => data.subscription.unsubscribe();
-  }, [mock, configured]);
+  }, [configured]);
   useEffect(() => {
-    if (loading || mock) return;
+    if (loading) return;
     if (!session && pathname !== "/login")
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     if (session && pathname === "/login") router.replace("/");
-  }, [loading, mock, pathname, router, session]);
+  }, [loading, pathname, router, session]);
   async function signOut() {
     await getSupabaseBrowserClient()?.auth.signOut({ scope: "local" });
     localStorage.removeItem("school-hq-focus-session-v2");
@@ -57,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.refresh();
   }
   const value = { session, loading, signOut };
-  if (!mock && !isSupabaseConfigured() && pathname !== "/login")
+  if (!isSupabaseConfigured() && pathname !== "/login")
     return (
       <main className="grid min-h-dvh place-items-center p-6 text-center">
         <div>
@@ -71,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         </div>
       </main>
     );
-  if (!mock && loading && pathname !== "/login")
+  if (loading && pathname !== "/login")
     return (
       <main
         className="grid min-h-dvh place-items-center"
@@ -80,6 +78,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         <LoaderCircle className="animate-spin text-accent" />
       </main>
     );
-  if (!mock && !session && pathname !== "/login") return null;
+  if (!session && pathname !== "/login") return null;
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

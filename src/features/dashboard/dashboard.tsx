@@ -73,6 +73,7 @@ export function Dashboard() {
   const nextEvent = upcomingEvents.find(
     (event) => area === "all" || resolveArea(event) === area,
   );
+  const statsSlice = stats?.[area === "all" ? "combined" : area];
   const hour = renderedAt.getHours();
   const greeting =
     hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -303,13 +304,13 @@ export function Dashboard() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-card-strong p-3">
                   <p className="text-xl font-semibold">
-                    {stats?.focus.focusedMinutesThisWeek ?? "—"}m
+                    {statsSlice?.focus.focusedMinutesThisWeek ?? "—"}m
                   </p>
                   <p className="text-xs text-muted">focused</p>
                 </div>
                 <div className="bg-card-strong p-3">
                   <p className="text-xl font-semibold">
-                    {stats?.assignments.completed ?? "—"}
+                    {statsSlice?.assignments.completed ?? "—"}
                   </p>
                   <p className="text-xs text-muted">completed</p>
                 </div>

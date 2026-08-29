@@ -26,14 +26,9 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api-client";
-import { isMockMode } from "@/lib/supabase/client";
-import {
-  assignments as mockAssignments,
-  brainDumpSeed,
-  plan as emptyPlan,
-} from "@/mocks/data";
 import type {
   Assignment,
+  Course,
   ParsedAssignment,
   StudyPlan,
   WorkArea,
@@ -63,33 +58,27 @@ const reasonLabel = {
 export function Planner() {
   const [pending] = useState(readPendingReview);
   const [stage, setStage] = useState<Stage>(pending ? "review" : "dump");
-  const [text, setText] = useState(
-    () => pending?.text ?? (isMockMode() ? brainDumpSeed : ""),
-  );
+  const [text, setText] = useState(() => pending?.text ?? "");
   const [drafts, setDrafts] = useState<ParsedAssignment[]>(
     () =>
       pending?.drafts.map((item) => ({
         ...item,
-        area: item.area ?? "school",
+        area: item.area,
       })) ?? [],
   );
-  const [known, setKnown] = useState<Assignment[]>(() =>
-    isMockMode() ? mockAssignments : [],
-  );
+  const [known, setKnown] = useState<Assignment[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [plan, setPlan] = useState<StudyPlan>(emptyPlan);
+  const [plan, setPlan] = useState<StudyPlan | null>(null);
   const [mode, setMode] = useAreaFilter();
   useEffect(() => {
-    void api
-      .listAssignments()
-      .then((items) =>
-        setKnown((current) => {
-          const ids = new Set(current.map((item) => item.id));
-          return [...current, ...items.filter((item) => !ids.has(item.id))];
-        }),
-      )
-      .catch(() => {});
+    void Promise.all([api.listAssignments(), api.listCourses()])
+      .then(([items, nextCourses]) => {
+        setKnown(items);
+        setCourses(nextCourses);
+      })
+      .catch((reason: Error) => setError(reason.message));
   }, []);
   async function parse() {
     setLoading(true);
@@ -98,13 +87,12 @@ export function Planner() {
       const result = await api.parseBrainDump({
         text,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      });
-      setDrafts(
-        result.parsedAssignments.map((item) => ({
-          ...item,
-          area: item.area ?? "school",
+        courseContext: courses.map((course) => ({
+          id: course.id,
+          name: course.name,
         })),
-      );
+      });
+      setDrafts(result.parsedAssignments);
       setStage("review");
     } catch (reason) {
       setError(
@@ -131,31 +119,49 @@ export function Planner() {
     setError("");
     try {
       const confirmed: Assignment[] = [];
-      for (const draft of drafts.filter(
+      for (const draft of (stage === "review" ? drafts : []).filter(
         (item) => mode === "all" || resolveArea(item) === mode,
       )) {
+        let courseId: string | null = null;
+        if (draft.area === "school" && draft.course?.trim()) {
+          let course = courses.find(
+            (item) =>
+              item.name.toLowerCase() === draft.course?.trim().toLowerCase(),
+          );
+          if (!course) {
+            course = await api.createCourse({
+              name: draft.course.trim(),
+              code: null,
+              color: "#6366F1",
+            });
+            setCourses((current) => [...current, course!]);
+          }
+          courseId = course.id;
+        }
         const created = await api.createAssignment({
           title: draft.title,
-          courseId: null,
+          courseId,
           dueAt: draft.dueAt,
           estimatedMinutes: draft.estimatedMinutes ?? 30,
           priority: draft.priority,
           taskType: draft.taskType,
           dependencyIds: [],
-          notes:
-            draft.notes ?? (draft.course ? `Course: ${draft.course}` : null),
+          notes: draft.notes,
           status: "confirmed",
           area: resolveArea(draft),
-          activityName: draft.activityName ?? null,
+          activityLabel:
+            draft.area === "extracurricular" ? draft.activityLabel : null,
         });
-        confirmed.push({
-          ...created,
-          area: created.area ?? resolveArea(draft),
-          activityName: created.activityName ?? draft.activityName,
-        });
+        confirmed.push(created);
       }
       setKnown((current) => [...confirmed, ...current]);
-      setPlan(await api.generatePlan(range(), mode));
+      if (stage === "review") setDrafts([]);
+      setPlan(
+        await api.generatePlan({
+          ...range(),
+          area: mode === "all" ? undefined : mode,
+        }),
+      );
       setStage("timeline");
     } catch (reason) {
       setError(
@@ -167,12 +173,12 @@ export function Planner() {
   }
   const shownBlocks = useMemo(
     () =>
-      plan.blocks.filter((block) => {
+      (plan?.blocks ?? []).filter((block) => {
         if (mode === "all" || block.kind === "break") return true;
         const assignment = known.find((item) => item.id === block.assignmentId);
         return assignment ? resolveArea(assignment) === mode : false;
       }),
-    [plan.blocks, known, mode],
+    [plan, known, mode],
   );
   const update = (index: number, patch: Partial<ParsedAssignment>) =>
     setDrafts((current) =>
@@ -333,14 +339,14 @@ export function Planner() {
                       value={
                         resolveArea(draft) === "school"
                           ? (draft.course ?? "")
-                          : (draft.activityName ?? "")
+                          : (draft.activityLabel ?? "")
                       }
                       onChange={(event) =>
                         update(
                           index,
                           resolveArea(draft) === "school"
                             ? { course: event.target.value || null }
-                            : { activityName: event.target.value || null },
+                            : { activityLabel: event.target.value || null },
                         )
                       }
                     />
@@ -405,7 +411,10 @@ export function Planner() {
                 ...current,
                 {
                   title: "New item",
+                  area: mode === "all" ? "school" : mode,
+                  areaConfidence: 1,
                   course: null,
+                  activityLabel: null,
                   dueAt: null,
                   ambiguousDateText: null,
                   estimatedMinutes: 30,
@@ -416,7 +425,6 @@ export function Planner() {
                   confidence: 1,
                   missingFields: [],
                   warnings: [],
-                  area: mode === "all" ? "school" : mode,
                 },
               ])
             }
@@ -444,7 +452,7 @@ export function Planner() {
           </div>
         </div>
       )}
-      {stage === "timeline" && (
+      {stage === "timeline" && plan && (
         <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
           <Card className="overflow-hidden">
             <CardHeader className="border-b border-border pb-4 sm:pb-4">
@@ -558,9 +566,18 @@ export function Planner() {
                 </CardContent>
               </Card>
             )}
-            <Button className="w-full">
+            <Button
+              className="w-full"
+              onClick={() =>
+                void api
+                  .patchPlan(plan.id, { status: "active" })
+                  .then(setPlan)
+                  .catch((reason: Error) => setError(reason.message))
+              }
+              disabled={plan.status === "active"}
+            >
               <Check size={17} />
-              Use this plan
+              {plan.status === "active" ? "Plan active" : "Use this plan"}
             </Button>
             <Button
               variant="ghost"

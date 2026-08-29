@@ -10,10 +10,9 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Mock mode is enabled by default for isolated UI and screenshot tests. For live integration:
+School HQ always uses the authenticated backend. Configure Supabase and the local backend rewrite:
 
 ```dotenv
-NEXT_PUBLIC_USE_MOCK_API=false
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 BACKEND_INTERNAL_URL=http://127.0.0.1:3001
@@ -31,7 +30,7 @@ npm run test:e2e
 npm run build
 ```
 
-The Playwright suite includes mobile, tablet, desktop, and visual baselines for dashboard, planner, calendar, and focus at 390px and desktop widths. See `docs/integration-notes.md` for exact backend conventions and currently missing area capabilities.
+The Playwright suite includes mobile, tablet, desktop, and visual baselines for dashboard, planner, calendar, and focus at 390px and desktop widths. See `docs/integration-notes.md` for the current backend conventions.
 
 ## iPhone / Xcode
 
@@ -46,10 +45,9 @@ npm run ios:sync
 npm run ios:open
 ```
 
-Mock mode works without a server. For real data, set these values before `npm run ios:sync`:
+Set these values before `npm run ios:sync` so the native bundle can use your account and deployed API:
 
 ```dotenv
-NEXT_PUBLIC_USE_MOCK_API=false
 NEXT_PUBLIC_API_URL=https://your-school-hq-backend.example.com
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...

@@ -21,26 +21,24 @@ type LocalSession = FocusSession & { localPausedRemainingSeconds?: number };
 export function FocusTimer() {
   const [session, setSession] = useState<LocalSession | null>(null);
   const [task, setTask] = useState<Assignment | null>(null);
+  const [tasks, setTasks] = useState<Assignment[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) setSession(JSON.parse(saved) as LocalSession);
-    } finally {
-      setReady(true);
-    }
-    void api
-      .listAssignments()
-      .then((items) =>
+    void Promise.all([api.listAssignments(), api.getActiveFocusSession()])
+      .then(([items, active]) => {
+        const open = items.filter(
+          (item) => !["completed", "archived"].includes(item.status),
+        );
+        setTasks(open);
+        setSession(active);
         setTask(
-          items.find(
-            (item) => !["completed", "archived"].includes(item.status),
-          ) ?? null,
-        ),
-      )
-      .catch(() => {});
+          open.find((item) => item.id === active?.assignmentId) ?? open[0] ?? null,
+        );
+      })
+      .catch((reason: Error) => toast.error(reason.message))
+      .finally(() => setReady(true));
   }, []);
   useEffect(() => {
     if (ready) {
@@ -172,6 +170,22 @@ export function FocusTimer() {
         title="One thing. Right now."
         description="The timer follows persisted server timestamps; refreshes and route changes do not steal time."
       />
+      <label className="block max-w-xl text-xs font-semibold text-muted">
+        Focus task
+        <select
+          className="input mt-1.5"
+          value={task?.id ?? ""}
+          disabled={Boolean(session && ["running", "paused"].includes(session.status))}
+          onChange={(event) =>
+            setTask(tasks.find((item) => item.id === event.target.value) ?? null)
+          }
+        >
+          <option value="">Choose an assignment</option>
+          {tasks.map((item) => (
+            <option key={item.id} value={item.id}>{item.title}</option>
+          ))}
+        </select>
+      </label>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Card
           className={`relative overflow-hidden transition-colors duration-200 ${ambient}`}

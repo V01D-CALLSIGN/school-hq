@@ -47,6 +47,7 @@ export function StatsView() {
   const completion = totals.total
     ? Math.round((totals.completed / totals.total) * 100)
     : 0;
+  const slice = summary?.[area === "all" ? "combined" : area];
   return (
     <div className="space-y-5">
       <PageHeader
@@ -67,8 +68,8 @@ export function StatsView() {
           <>
             <Metric
               label="Focused this week"
-              value={`${summary.focus.focusedMinutesThisWeek}m`}
-              detail={`${summary.focus.completedSessionsThisWeek} sessions`}
+              value={`${slice?.focus.focusedMinutesThisWeek ?? 0}m`}
+              detail={`${slice?.focus.completedSessionsThisWeek ?? 0} sessions`}
               icon={Clock3}
               accent="text-violet-300"
             />
@@ -90,7 +91,7 @@ export function StatsView() {
             />
             <Metric
               label="Scheduled"
-              value={`${summary.plan.scheduledMinutesThisWeek}m`}
+              value={`${slice?.plan.scheduledMinutesThisWeek ?? 0}m`}
               detail="This week"
               icon={Clock3}
               accent="text-slate-300"
@@ -131,16 +132,16 @@ export function StatsView() {
               Backend totals
             </p>
             <p className="mt-4 text-4xl font-bold">
-              {summary?.assignments.completed ?? 0}
+              {slice?.assignments.completed ?? 0}
             </p>
             <p className="mt-1 text-sm text-muted">all-time completed</p>
             <div className="mt-5 border-t border-border pt-4 text-xs text-muted">
               <span className="font-mono text-foreground">
-                {summary?.assignments.incomplete ?? 0}
+                {slice?.assignments.incomplete ?? 0}
               </span>{" "}
               still open ·{" "}
               <span className="font-mono text-danger">
-                {summary?.assignments.overdue ?? 0}
+                {slice?.assignments.overdue ?? 0}
               </span>{" "}
               overdue
             </div>
