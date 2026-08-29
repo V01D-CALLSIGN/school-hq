@@ -32,6 +32,14 @@ import {
 
 const wait = (ms = 120) => new Promise((resolve) => setTimeout(resolve, ms));
 const mockEnabled = () => process.env.NEXT_PUBLIC_USE_MOCK_API !== "false";
+const apiBaseUrl = () =>
+  (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
+
+export function resolveApiUrl(path: string) {
+  const baseUrl = apiBaseUrl();
+  return baseUrl && path.startsWith("/api/") ? `${baseUrl}${path}` : path;
+}
+
 function categoryFor(code: string, status: number): ApiError["category"] {
   if (code === "UNAUTHORIZED" || status === 401) return "auth";
   if (
@@ -98,10 +106,11 @@ export async function apiRequest<T>(
     )
       headers.set("Content-Type", "application/json");
     if (token) headers.set("Authorization", `Bearer ${token}`);
-    const response = await fetch(path, {
+    const requestUrl = resolveApiUrl(path);
+    const response = await fetch(requestUrl, {
       ...init,
       headers,
-      credentials: "same-origin",
+      credentials: apiBaseUrl() ? "omit" : "same-origin",
     });
     const envelope = (await response
       .json()

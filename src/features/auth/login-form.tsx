@@ -6,6 +6,7 @@ import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import {
   getSupabaseBrowserClient,
+  getAuthRedirectUrl,
   isMockMode,
   isSupabaseConfigured,
 } from "@/lib/supabase/client";
@@ -31,7 +32,7 @@ export function LoginForm() {
     }
     const { error: authError } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/` },
+      options: { emailRedirectTo: getAuthRedirectUrl() },
     });
     setLoading(false);
     if (authError) setError(authError.message);

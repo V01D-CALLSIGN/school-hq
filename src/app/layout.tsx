@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { AppShell } from "@/components/layout/app-shell";
 import { PwaRegister } from "@/components/pwa-register";
+import { NativeRuntime } from "@/components/native-runtime";
 import { AuthProvider } from "@/features/auth/auth-provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -41,6 +42,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#090b10",
   colorScheme: "dark light",
+  viewportFit: "cover",
 };
 export default function RootLayout({
   children,
@@ -50,6 +52,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
+        <NativeRuntime />
         <PwaRegister />
         <AuthProvider>
           <AppShell>{children}</AppShell>

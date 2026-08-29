@@ -39,6 +39,11 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: "Space Grotesk Variable", ui-sans-serif, system-ui, sans-serif;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
 }
 h1,
 h2,
@@ -96,9 +101,11 @@ select {
     border-color 0.18s ease,
     background-color 0.18s ease;
 }
-.interactive-card:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+@media (hover: hover) and (pointer: fine) {
+  .interactive-card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  }
 }
 .status-pulse {
   animation: status-pulse 1.8s ease-in-out infinite;
@@ -125,6 +132,11 @@ select {
 }
 .input:focus {
   border-color: var(--accent);
+}
+@media (max-width: 640px) {
+  .input {
+    font-size: 1rem;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   *,

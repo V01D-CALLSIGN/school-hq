@@ -28,6 +28,14 @@ describe("backend contract client", () => {
       "Bearer access-token",
     );
   });
+  it("uses the public backend origin for native builds", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_URL", "https://api.school-hq.example/");
+    vi.mocked(fetch).mockResolvedValue(success({ value: 42 }));
+    await apiRequest<{ value: number }>("/api/example");
+    const [path, init] = vi.mocked(fetch).mock.calls[0];
+    expect(path).toBe("https://api.school-hq.example/api/example");
+    expect(init?.credentials).toBe("omit");
+  });
   it("uploads the actual calendar file as multipart without forcing Content-Type", async () => {
     vi.mocked(fetch).mockResolvedValue(
       success({ import: { eventCount: 0 }, events: [] }, 201),

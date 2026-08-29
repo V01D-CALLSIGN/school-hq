@@ -32,3 +32,29 @@ npm run build
 ```
 
 The Playwright suite includes mobile, tablet, desktop, and visual baselines for dashboard, planner, calendar, and focus at 390px and desktop widths. See `docs/integration-notes.md` for exact backend conventions and currently missing area capabilities.
+
+## iPhone / Xcode
+
+School HQ includes a Capacitor iOS project at `ios/App/App.xcodeproj`. The native build keeps the existing responsive interface and adds iPhone safe-area, status-bar, keyboard, splash-screen, and Supabase deep-link handling.
+
+Build the static web bundle, sync it into Xcode, and open the project:
+
+```bash
+npm install
+cp .env.example .env.local
+npm run ios:sync
+npm run ios:open
+```
+
+Mock mode works without a server. For real data, set these values before `npm run ios:sync`:
+
+```dotenv
+NEXT_PUBLIC_USE_MOCK_API=false
+NEXT_PUBLIC_API_URL=https://your-school-hq-backend.example.com
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+```
+
+The native client calls `NEXT_PUBLIC_API_URL` directly, so the backend must be deployed over HTTPS with native CORS enabled. In Supabase Authentication URL Configuration, add `schoolhq://auth/callback` to the redirect allow list for passwordless sign-in.
+
+In Xcode, select the `App` target, choose a Team under **Signing & Capabilities**, select a connected iPhone, and press Run. After changing frontend code or environment values, run `npm run ios:sync` again before rebuilding in Xcode.

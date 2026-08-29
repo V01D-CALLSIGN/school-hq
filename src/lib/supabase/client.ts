@@ -1,4 +1,15 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { Capacitor } from "@capacitor/core";
+
+export const NATIVE_AUTH_CALLBACK = "schoolhq://auth/callback";
+
+export function isNativeApp() {
+  return typeof window !== "undefined" && Capacitor.isNativePlatform();
+}
+
+export function getAuthRedirectUrl() {
+  return isNativeApp() ? NATIVE_AUTH_CALLBACK : `${window.location.origin}/`;
+}
 
 let client: SupabaseClient | null = null;
 export function isMockMode() {
@@ -19,7 +30,8 @@ export function getSupabaseBrowserClient(): SupabaseClient | null {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true,
+        detectSessionInUrl: !isNativeApp(),
+        flowType: isNativeApp() ? "pkce" : "implicit",
       },
     },
   );
