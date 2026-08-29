@@ -5,6 +5,7 @@ import { HttpError } from "@/lib/server/errors";
 
 export const MAX_ICS_BYTES = 1_000_000;
 export const MAX_CALENDAR_EVENTS = 5_000;
+const MAX_RECURRENCE_ITERATIONS = 20_000;
 
 export type NormalizedCalendarEvent = Omit<CalendarEvent, "id" | "calendarImportId">;
 
@@ -33,6 +34,9 @@ export function parseCalendar(
       ICAL.TimezoneService.register(timezone);
     }
     const components = calendar.getAllSubcomponents("vevent");
+    if (components.length > MAX_CALENDAR_EVENTS) {
+      throw new HttpError(413, "TOO_MANY_EVENTS", "Calendar contains more than 5,000 events");
+    }
     const overrides = new Map<string, ICAL.Component>();
     for (const component of components) {
       const recurrenceId = component.getFirstPropertyValue("recurrence-id") as ICAL.Time | null;
@@ -54,7 +58,12 @@ export function parseCalendar(
       if (event.isRecurring()) {
         const iterator = event.iterator();
         let occurrence: ICAL.Time | null;
+        let iterations = 0;
         while ((occurrence = iterator.next())) {
+          iterations += 1;
+          if (iterations > MAX_RECURRENCE_ITERATIONS) {
+            throw new HttpError(413, "TOO_MANY_EVENTS", "Calendar recurrence is too large to import safely");
+          }
           const date = jsDate(occurrence);
           if (date >= range.end) break;
           if (date >= range.start && !exdates.has(occurrence.toString())) occurrences.push(occurrence.clone());
@@ -79,6 +88,9 @@ export function parseCalendar(
           startsAt: start.toISOString(), endsAt: end.toISOString(), allDay: occurrence.isDate,
           classification: "busy", area: "school", originalTimezone: limited(occurrence.zone?.tzid, 100),
         });
+        if (normalized.length > MAX_CALENDAR_EVENTS) {
+          throw new HttpError(413, "TOO_MANY_EVENTS", "Calendar expands beyond 5,000 events");
+        }
       }
     }
     return normalized.sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.sourceUid.localeCompare(b.sourceUid));

@@ -29,11 +29,22 @@ function applyCorsHeaders(response: NextResponse, origin: string | null) {
   return response;
 }
 
+function applySecurityHeaders(response: NextResponse) {
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Referrer-Policy", "no-referrer");
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+  return response;
+}
+
 export function proxy(request: NextRequest) {
   const origin = request.headers.get("origin");
 
   if (!isCorsOriginAllowed(origin)) {
-    return NextResponse.json(
+    return applySecurityHeaders(NextResponse.json(
       {
         ok: false,
         error: {
@@ -42,13 +53,13 @@ export function proxy(request: NextRequest) {
         },
       },
       { status: 403 },
-    );
+    ));
   }
 
   if (request.method === "OPTIONS")
-    return applyCorsHeaders(new NextResponse(null, { status: 204 }), origin);
+    return applySecurityHeaders(applyCorsHeaders(new NextResponse(null, { status: 204 }), origin));
 
-  return applyCorsHeaders(NextResponse.next(), origin);
+  return applySecurityHeaders(applyCorsHeaders(NextResponse.next(), origin));
 }
 
 export const config = {

@@ -11,8 +11,7 @@ export const runtime = "nodejs";
 export async function POST(request: Request): Promise<Response> {
   try {
     const { user, supabase } = await requireAuth(request);
-    if (Number(request.headers.get("content-length") ?? 0) > 20_000) throw new HttpError(413, "INPUT_TOO_LARGE", "Brain dump request exceeds the size limit");
-    const input = parseBrainDumpInputSchema.parse(await readJson(request));
+    const input = parseBrainDumpInputSchema.parse(await readJson(request, 20_000));
     const env = getServerEnv();
     enforceRateLimit(`brain-dump:${user.id}`, env.BRAIN_DUMP_RATE_LIMIT_PER_MINUTE);
     if (env.BRAIN_DUMP_PARSER === "openai" && !env.OPENAI_API_KEY) {

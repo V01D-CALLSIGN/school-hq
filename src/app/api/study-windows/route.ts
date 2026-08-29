@@ -1,4 +1,4 @@
-import { createStudyWindowInputSchema, deleteByIdInputSchema, studyWindowSchema, success, updateStudyWindowInputSchema, type StudyWindow } from "@/lib/contracts";
+import { createStudyWindowInputSchema, deleteByIdInputSchema, isoDateTimeSchema, studyWindowSchema, success, updateStudyWindowInputSchema, type StudyWindow } from "@/lib/contracts";
 import { requireAuth } from "@/lib/server/auth";
 import { assertDb, camelize, snakeize } from "@/lib/server/db";
 import { readJson, toErrorResponse } from "@/lib/server/errors";
@@ -8,8 +8,10 @@ export async function GET(request: Request): Promise<Response> {
     const { supabase } = await requireAuth(request);
     const url = new URL(request.url);
     let query = supabase.from("study_windows").select("*").order("starts_at");
-    if (url.searchParams.get("from")) query = query.gte("ends_at", url.searchParams.get("from")!);
-    if (url.searchParams.get("to")) query = query.lte("starts_at", url.searchParams.get("to")!);
+    const from = url.searchParams.get("from");
+    const to = url.searchParams.get("to");
+    if (from) query = query.gte("ends_at", isoDateTimeSchema.parse(from));
+    if (to) query = query.lte("starts_at", isoDateTimeSchema.parse(to));
     return success(studyWindowSchema.array().parse(camelize<StudyWindow[]>(assertDb(await query))));
   } catch (error) { return toErrorResponse(error); }
 }

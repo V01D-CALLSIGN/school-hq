@@ -22,6 +22,6 @@ export async function GET(request: Request): Promise<Response> {
     const events = camelize<CalendarEvent[]>(rows).map((event) => calendarEventSchema.parse({
       ...event, recurrenceId: event.recurrenceId || null,
     }));
-    return success(events, { headers: { "Cache-Control": "private, max-age=30" } });
+    return success(events);
   } catch (error) { return toErrorResponse(error); }
 }

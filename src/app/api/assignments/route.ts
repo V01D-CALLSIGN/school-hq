@@ -1,4 +1,4 @@
-import { areaSchema, assignmentSchema, createAssignmentInputSchema, deleteByIdInputSchema, success, updateAssignmentInputSchema, type Assignment } from "@/lib/contracts";
+import { areaSchema, assignmentSchema, assignmentStatusSchema, createAssignmentInputSchema, deleteByIdInputSchema, success, updateAssignmentInputSchema, type Assignment } from "@/lib/contracts";
 import { requireAuth } from "@/lib/server/auth";
 import { assertDb, camelize, snakeize } from "@/lib/server/db";
 import { HttpError, readJson, toErrorResponse } from "@/lib/server/errors";
@@ -24,7 +24,7 @@ export async function GET(request: Request): Promise<Response> {
     const url = new URL(request.url);
     let query = supabase.from("assignments").select("*").order("due_at", { ascending: true, nullsFirst: false });
     const status = url.searchParams.get("status");
-    if (status) query = query.eq("status", status);
+    if (status) query = query.eq("status", assignmentStatusSchema.parse(status));
     const area = url.searchParams.get("area");
     if (area) query = query.eq("area", areaSchema.parse(area));
     const result = await query;
