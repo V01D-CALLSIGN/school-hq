@@ -25,6 +25,14 @@
 # misc
 .DS_Store
 *.pem
+*.key
+*.p8
+*.p12
+*.mobileprovision
+*.xcuserstate
+GoogleService-Info.plist
+.npmrc
+.netrc
 
 # debug
 npm-debug.log*

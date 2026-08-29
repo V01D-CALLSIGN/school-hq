@@ -30,8 +30,16 @@ import {
   type UpdateStudyWindowInput,
 } from "@/types/api";
 
-const apiBaseUrl = () =>
-  (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
+const apiBaseUrl = () => {
+  const configured = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
+  if (!configured) return "";
+  const url = new URL(configured);
+  const localDevelopment = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if ((!localDevelopment && url.protocol !== "https:") || url.username || url.password) {
+    throw new Error("NEXT_PUBLIC_API_URL must be an HTTPS origin without credentials");
+  }
+  return url.origin;
+};
 
 export function resolveApiUrl(path: string) {
   const baseUrl = apiBaseUrl();
@@ -108,6 +116,8 @@ export async function apiRequest<T>(
       ...init,
       headers,
       credentials: apiBaseUrl() ? "omit" : "same-origin",
+      cache: "no-store",
+      referrerPolicy: "no-referrer",
     });
     const envelope = (await response
       .json()

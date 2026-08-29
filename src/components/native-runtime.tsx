@@ -6,34 +6,22 @@ import { SplashScreen } from "@capacitor/splash-screen";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { useEffect } from "react";
 import { toast } from "sonner";
-import {
-  getSupabaseBrowserClient,
-  NATIVE_AUTH_CALLBACK,
-} from "@/lib/supabase/client";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 async function completeNativeSignIn(url: string) {
-  if (!url.startsWith(NATIVE_AUTH_CALLBACK)) return;
+  const callback = new URL(url);
+  if (
+    callback.protocol !== "schoolhq:" ||
+    callback.hostname !== "auth" ||
+    callback.pathname !== "/callback"
+  ) return;
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Supabase is not configured.");
 
-  const callback = new URL(url);
   const code = callback.searchParams.get("code");
-  if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (error) throw error;
-    return;
-  }
-
-  // Retain compatibility with existing implicit-flow magic links.
-  const fragment = new URLSearchParams(callback.hash.replace(/^#/, ""));
-  const accessToken = fragment.get("access_token");
-  const refreshToken = fragment.get("refresh_token");
-  if (!accessToken || !refreshToken)
+  if (!code)
     throw new Error("The sign-in link did not include a valid session.");
-  const { error } = await supabase.auth.setSession({
-    access_token: accessToken,
-    refresh_token: refreshToken,
-  });
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) throw error;
 }
 

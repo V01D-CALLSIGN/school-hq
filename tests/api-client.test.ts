@@ -26,6 +26,15 @@ describe("backend contract client", () => {
     expect(new Headers(init?.headers).get("Authorization")).toBe(
       "Bearer access-token",
     );
+    expect(init?.cache).toBe("no-store");
+    expect(init?.referrerPolicy).toBe("no-referrer");
+  });
+  it("refuses to send a bearer token to an insecure remote backend", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_URL", "http://api.school-hq.example");
+    await expect(apiRequest("/api/example")).rejects.toThrow(
+      "NEXT_PUBLIC_API_URL must be an HTTPS origin without credentials",
+    );
+    expect(fetch).not.toHaveBeenCalled();
   });
   it("uses the public backend origin for native builds", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_URL", "https://api.school-hq.example/");
