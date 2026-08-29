@@ -219,10 +219,19 @@ export const updatePlanInputSchema = z.object({
   }).refine((value) => value.startsAt !== undefined || value.endsAt !== undefined || value.locked !== undefined, "At least one block update is required")).max(500).optional(),
 }).refine((value) => value.status !== undefined || value.blocks !== undefined, "At least one update is required");
 
-export const updateCalendarEventInputSchema = z.object({
-  id: uuidSchema,
-  classification: calendarClassificationSchema,
+const calendarEventInputBaseSchema = calendarEventSchema.pick({
+  title: true, description: true, location: true, startsAt: true, endsAt: true,
+  allDay: true, classification: true, area: true, originalTimezone: true,
 });
+export const createCalendarEventInputSchema = calendarEventInputBaseSchema.refine((value) => Date.parse(value.endsAt) > Date.parse(value.startsAt), {
+  message: "endsAt must be after startsAt", path: ["endsAt"],
+});
+export const updateCalendarEventInputSchema = calendarEventInputBaseSchema.partial().extend({ id: uuidSchema })
+  .refine((value) => Object.keys(value).some((key) => key !== "id"), "At least one update is required")
+  .refine(
+    (value) => !value.startsAt || !value.endsAt || Date.parse(value.endsAt) > Date.parse(value.startsAt),
+    { message: "endsAt must be after startsAt", path: ["endsAt"] },
+  );
 
 export const createCourseInputSchema = courseSchema.pick({ name: true, code: true, color: true });
 export const updateCourseInputSchema = createCourseInputSchema.partial().extend({ id: uuidSchema }).refine(

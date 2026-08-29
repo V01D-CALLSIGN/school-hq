@@ -60,11 +60,15 @@ Collection endpoint wire contracts:
 | `DELETE /api/assignments` | `{ id }` | `{ id }` |
 | `GET /api/scheduling-preferences` | none | `SchedulingPreferences` |
 | `PATCH /api/scheduling-preferences` | any non-empty subset of `SchedulingPreferences` | `SchedulingPreferences` |
-| `PATCH /api/calendar/events` | `{ id, classification: "busy" \| "study_available" \| "ignored" }` | `CalendarEvent` |
+| `POST /api/calendar/events` | manual event fields (title, time range, classification, area, and optional metadata) | `CalendarEvent` (201) |
+| `PATCH /api/calendar/events` | `{ id, ...changedManualEventFields }` | `CalendarEvent` |
+| `DELETE /api/calendar/events` | `{ id }` | `{ id }` |
 
 School assignments may use `courseId` and must have `activityLabel: null`. Extracurricular assignments use `courseId: null` and may provide `activityLabel`; no placeholder course is required. Existing and omitted-area records safely resolve to `school`. Assignment/course/dependency/focus targets and calendar event IDs are all resolved under the authenticated user's RLS session.
 
-Calendar import remains multipart. Alongside required `file` and optional `classification`, it accepts optional `area=school|extracurricular` (default `school`). `GET /api/calendar/week` accepts the same optional `area` query filter. `PATCH /api/calendar/events` changes classification only; it does not rewrite imported event identity or timestamps.
+Calendar import remains multipart. Alongside required `file` and optional `classification`, it accepts optional `area=school|extracurricular` (default `school`). `GET /api/calendar/week` accepts the same optional `area` query filter. Manual events share the authenticated event store and can be edited or deleted; imported identity remains server-managed.
+
+`GET /api/focus-sessions` returns the current running or paused session, or `null`, so clients recover focus state across devices without relying on local placeholder state.
 
 Plan generation body is `{ rangeStart, rangeEnd, timezone, area? }`. Omitting `area` is combined mode and persists `areaFilter: "combined"`; supplying an area filters assignment candidates and persists that value. Both areas use the same availability/collision engine in combined mode. Busy events and locked blocks remain global constraints regardless of the assignment filter. Locked blocks keep their IDs/times and move to the regenerated draft as before.
 

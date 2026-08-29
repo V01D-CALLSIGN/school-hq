@@ -23,14 +23,7 @@ The language model extracts reviewable assignment candidates. Only deterministic
 5. Create your local auth user normally. Never substitute its UUID into demo SQL.
 6. Run `npm run dev`.
 
-Optional demo data uses only the fixed development identity `00000000-0000-4000-a000-00000000de00`. Load and remove it from the repository root with:
-
-```sh
-psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -v ON_ERROR_STOP=1 -v school_hq_demo_seed=1 -f supabase/seeds/demo.sql
-psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -v ON_ERROR_STOP=1 -f supabase/seeds/clear-demo.sql
-```
-
-The loader is idempotent and refuses to run without the explicit opt-in variable. Cleanup deletes only the reserved demo identity after verifying its fixed `.invalid` email; existing ownership cascades remove its application rows safely. A later `supabase db reset` also returns the application database to an empty state because only `supabase/seed.sql` runs automatically.
+No demo data is included. Database resets and new accounts start empty.
 
 Tests default to `BRAIN_DUMP_PARSER=mock`. For real local parsing, install [Ollama](https://ollama.com/), then run:
 
@@ -78,11 +71,11 @@ All endpoints return either `{ ok: true, data }` or `{ ok: false, error: { code,
 - `GET|PATCH /api/scheduling-preferences`
 - `POST /api/calendar/import`
 - `GET /api/calendar/week`
-- `PATCH /api/calendar/events`
+- `POST|PATCH|DELETE /api/calendar/events`
 - `GET|POST|PATCH|DELETE /api/study-windows`
 - `POST /api/plans/generate`
 - `GET|PATCH /api/plans/:id`
-- `POST|PATCH /api/focus-sessions`
+- `GET|POST|PATCH /api/focus-sessions`
 - `GET /api/stats/summary`
 
 Calendar import uses `multipart/form-data` with an `.ics` field named `file`; optional `classification` is `busy`, `study_available`, or `ignored`.

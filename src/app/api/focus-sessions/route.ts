@@ -4,6 +4,23 @@ import { requireAuth } from "@/lib/server/auth";
 import { assertDb, camelize, snakeize } from "@/lib/server/db";
 import { HttpError, readJson, toErrorResponse } from "@/lib/server/errors";
 
+export async function GET(request: Request): Promise<Response> {
+  try {
+    const { supabase } = await requireAuth(request);
+    const { data, error } = await supabase
+      .from("focus_sessions")
+      .select("*")
+      .in("status", ["running", "paused"])
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return success(data ? focusSessionSchema.parse(camelize(data)) : null);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
 export async function POST(request: Request): Promise<Response> {
   try {
     const { user, supabase } = await requireAuth(request);
