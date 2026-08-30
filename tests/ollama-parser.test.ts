@@ -37,7 +37,7 @@ describe("Ollama brain dump parser", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:11434/api/tags", expect.objectContaining({ method: "GET" }));
     const [, chatInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     const body = JSON.parse(String(chatInit.body));
-    expect(body).toMatchObject({ model: "qwen3.5:4b", stream: false, options: { temperature: 0 } });
+    expect(body).toMatchObject({ model: "qwen3.5:4b", stream: false, think: false, options: { temperature: 0 } });
     expect(body.format).toMatchObject({ type: "object", properties: { assignments: expect.any(Object) } });
   });
 
@@ -49,6 +49,9 @@ describe("Ollama brain dump parser", () => {
     for (const [, init] of fetchMock.mock.calls as Array<[string, RequestInit]>) {
       expect(new Headers(init.headers).get("Authorization")).toBe("Bearer cloud-secret");
     }
+    const body = JSON.parse(String((fetchMock.mock.calls[1] as [string, RequestInit])[1].body));
+    expect(body).toMatchObject({ format: "json", think: "low" });
+    expect(body.messages[0].content).toContain("Return only JSON matching this schema:");
   });
 
   it("returns a clear server error after one connection retry", async () => {
@@ -67,7 +70,7 @@ describe("Ollama brain dump parser", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("aborts timed-out generation and retries once", async () => {
+  it("aborts timed-out generation without repeating a slow request", async () => {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (url.endsWith("/api/tags")) return Promise.resolve(tagsResponse());
       return new Promise<Response>((_, reject) => {
@@ -75,7 +78,7 @@ describe("Ollama brain dump parser", () => {
       });
     });
     await expect(parserWith(fetchMock, 5).parse(input)).rejects.toMatchObject({ status: 504, code: "PARSER_TIMEOUT" });
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("rejects malformed structured output after one retry", async () => {

@@ -34,7 +34,7 @@ ollama serve
 
 Set `BRAIN_DUMP_PARSER=ollama`, `OLLAMA_BASE_URL=http://127.0.0.1:11434`, and `OLLAMA_MODEL=qwen3.5:4b` (the values already shown in `.env.example`). The Next.js server performs a short `/api/tags` health/model check and calls Ollama's native `/api/chat` endpoint with a strict JSON Schema. Browser code never contacts Ollama.
 
-For a deployed backend, Ollama Cloud can be used without an always-on local machine. Set `OLLAMA_BASE_URL=https://ollama.com`, `OLLAMA_API_KEY` to a server-side Ollama API key, and `OLLAMA_MODEL` to a model available to the account (for example `gpt-oss:20b`). The key is sent only as a bearer token from the backend to Ollama.
+For a deployed backend, Ollama Cloud can be used without an always-on local machine. Set `OLLAMA_BASE_URL=https://ollama.com`, `OLLAMA_API_KEY` to a server-side Ollama API key, and `OLLAMA_MODEL` to a model available to the account (for example `gpt-oss:20b`). The key is sent only as a bearer token from the backend to Ollama. Cloud calls use JSON mode with the schema included in the system instruction, then apply the same strict local Zod validation, because Ollama Cloud does not currently enforce structured-output schemas.
 
 OpenAI remains optional: set `BRAIN_DUMP_PARSER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL` only when that hosted provider is desired. Use `mock` for deterministic development or automated tests.
 

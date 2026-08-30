@@ -6,6 +6,7 @@ import { HttpError } from "@/lib/server/errors";
 
 const parserOutputSchema = z.object({ assignments: z.array(parsedAssignmentSchema).max(100) });
 const parserOutputJsonSchema = zodToJsonSchema(parserOutputSchema, { $refStrategy: "none" });
+const parserOutputJsonSchemaText = JSON.stringify(parserOutputJsonSchema);
 
 const extractionInstructions = [
   "Extract assignments only; never invent a deadline or duration.",
@@ -97,7 +98,11 @@ export class OllamaBrainDumpParser implements BrainDumpParser {
       } catch (error) {
         const normalized = this.normalizeError(error);
         lastError = normalized;
-        if (attempt === 1 || normalized.code === "OLLAMA_MODEL_UNAVAILABLE") throw normalized;
+        if (
+          attempt === 1 ||
+          normalized.code === "OLLAMA_MODEL_UNAVAILABLE" ||
+          normalized.code === "PARSER_TIMEOUT"
+        ) throw normalized;
       }
     }
     throw lastError ?? new HttpError(502, "PARSER_UNAVAILABLE", "Assignment parsing is temporarily unavailable");
@@ -115,16 +120,25 @@ export class OllamaBrainDumpParser implements BrainDumpParser {
   }
 
   private async generate(input: { text: string; timezone: string; courseContext?: Array<{ name: string }> }): Promise<ParsedAssignment[]> {
+    const isCloud = Boolean(this.options.apiKey);
     const { response, payload } = await this.requestJson(`${this.baseUrl}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: this.options.model,
         stream: false,
-        format: parserOutputJsonSchema,
+        // Ollama Cloud currently supports JSON mode but not schema-enforced
+        // structured output. Validation still happens locally with Zod.
+        format: isCloud ? "json" : parserOutputJsonSchema,
+        think: this.options.model.startsWith("gpt-oss") ? "low" : false,
         options: { temperature: 0 },
         messages: [
-          { role: "system", content: extractionInstructions },
+          {
+            role: "system",
+            content: isCloud
+              ? `${extractionInstructions} Return only JSON matching this schema: ${parserOutputJsonSchemaText}`
+              : extractionInstructions,
+          },
           { role: "user", content: JSON.stringify(input) },
         ],
       }),

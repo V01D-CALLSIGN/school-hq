@@ -7,6 +7,7 @@ import { HttpError, readJson, toErrorResponse } from "@/lib/server/errors";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
+export const maxDuration = 75;
 
 export async function POST(request: Request): Promise<Response> {
   try {
