@@ -1,4 +1,5 @@
-import { areaSchema, calendarClassificationSchema, calendarEventSchema, calendarImportSchema, success, type CalendarEvent, type CalendarImport } from "@/lib/contracts";
+import { calendarEventSchema, calendarImportSchema, success, type CalendarEvent, type CalendarImport } from "@/lib/contracts";
+import { classifyImportedCalendarEvent } from "@/lib/calendar/classification";
 import { hashCalendarSource, MAX_ICS_BYTES, parseCalendar } from "@/lib/calendar/parser";
 import { requireAuth } from "@/lib/server/auth";
 import { assertDb, camelize } from "@/lib/server/db";
@@ -17,11 +18,9 @@ export async function POST(request: Request): Promise<Response> {
     if (!(file instanceof File) || !file.name.toLowerCase().endsWith(".ics")) throw new HttpError(422, "INVALID_FILE", "An .ics file is required");
     if (file.name.length > 200) throw new HttpError(422, "INVALID_FILE", "Calendar filename is too long");
     if (file.size > MAX_ICS_BYTES) throw new HttpError(413, "CALENDAR_TOO_LARGE", "Calendar file exceeds 1 MB");
-    const classification = calendarClassificationSchema.parse(form.get("classification") ?? "busy");
-    const area = areaSchema.parse(form.get("area") ?? "school");
     const content = await file.text();
     const sourceHash = hashCalendarSource(content);
-    const parsed = parseCalendar(content).map((event) => ({ ...event, classification, area }));
+    const parsed = parseCalendar(content).map(classifyImportedCalendarEvent);
     const importRow = assertDb<Record<string, unknown> & { id: string }>(await supabase.from("calendar_imports").upsert({
       user_id: user.id, source_name: file.name, source_hash: sourceHash, event_count: parsed.length, imported_at: new Date().toISOString(),
     }, { onConflict: "user_id,source_name" }).select().single());

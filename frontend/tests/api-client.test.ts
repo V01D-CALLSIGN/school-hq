@@ -51,14 +51,14 @@ describe("backend contract client", () => {
     const file = new File(["BEGIN:VCALENDAR\nEND:VCALENDAR"], "school.ics", {
       type: "text/calendar",
     });
-    await api.importCalendar(file, "study_available", "extracurricular");
+    await api.importCalendar(file);
     const [path, init] = vi.mocked(fetch).mock.calls[0];
     expect(path).toBe("/api/calendar/import");
     expect(init?.body).toBeInstanceOf(FormData);
     const form = init?.body as FormData;
     expect(form.get("file")).toBe(file);
-    expect(form.get("classification")).toBe("study_available");
-    expect(form.get("area")).toBe("extracurricular");
+    expect(form.get("classification")).toBeNull();
+    expect(form.get("area")).toBeNull();
     expect(new Headers(init?.headers).has("Content-Type")).toBe(false);
   });
   it("sends the required plan generation range and timezone", async () => {

@@ -104,6 +104,7 @@ export function CalendarView() {
   );
   const [area, setArea] = useAreaFilter();
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
   const [editTimes, setEditTimes] = useState({ startsAt: "", endsAt: "" });
@@ -111,9 +112,6 @@ export function CalendarView() {
   const fileRef = useRef<HTMLInputElement>(null);
   const selectedDayRef = useRef<HTMLButtonElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [classification, setClassification] =
-    useState<CalendarClassification>("busy");
-  const [importArea, setImportArea] = useState<WorkArea>("school");
   const [manual, setManual] = useState({
     title: "",
     startsAt: "",
@@ -155,9 +153,9 @@ export function CalendarView() {
     .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
   async function upload() {
     if (!file) return;
-    setLoading(true);
+    setUploading(true);
     try {
-      const result = await api.importCalendar(file, classification, importArea);
+      const result = await api.importCalendar(file);
       setEvents(await api.getCalendarWeek(week.toISOString(), timezone));
       setUploadOpen(false);
       setFile(null);
@@ -165,7 +163,7 @@ export function CalendarView() {
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : "Import failed");
     } finally {
-      setLoading(false);
+      setUploading(false);
     }
   }
   async function addManualEvent() {
@@ -639,9 +637,11 @@ export function CalendarView() {
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Import calendar feed</DialogTitle>
+            <DialogTitle>Import calendar</DialogTitle>
             <DialogDescription>
-              Import your own .ics schedule. Choose Study Blocks so planning fits assignments inside those times.
+              Choose your .ics file. Events named EC STUDY TIME, SCHOOL STUDY
+              BLOCK, or SCHOOL STGUDY BLOCK become planning windows
+              automatically. Breaks and other events stay busy.
             </DialogDescription>
           </DialogHeader>
           <div className="mt-5 space-y-4">
@@ -652,34 +652,13 @@ export function CalendarView() {
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               className="block w-full text-sm text-muted file:mr-3 file:rounded-md file:border-0 file:bg-card-strong file:px-3 file:py-2 file:text-foreground"
             />
-            <Choice
-              label="Area"
-              value={importArea}
-              setValue={(value) => setImportArea(value as WorkArea)}
-              options={[
-                ["school", "School"],
-                ["extracurricular", "EC"],
-              ]}
-            />
-            <Choice
-              label="Classification"
-              value={classification}
-              setValue={(value) =>
-                setClassification(value as CalendarClassification)
-              }
-              options={[
-                ["busy", "Busy"],
-                ["study_available", "Study Blocks / available"],
-                ["ignored", "Ignore"],
-              ]}
-            />
           </div>
           <DialogFooter className="mt-5">
             <Button variant="ghost" onClick={() => setUploadOpen(false)}>
               Cancel
             </Button>
-            <Button disabled={!file || loading} onClick={() => void upload()}>
-              {loading ? (
+            <Button disabled={!file || uploading} onClick={() => void upload()}>
+              {uploading ? (
                 <LoaderCircle className="animate-spin" size={16} />
               ) : (
                 <FileUp size={16} />

@@ -6,7 +6,6 @@ import {
   type Assignment,
   type BrainDump,
   type BrainDumpParseInput,
-  type CalendarClassification,
   type CalendarEvent,
   type CalendarImportResponse,
   type Course,
@@ -179,15 +178,9 @@ export const api = {
   deleteAssignment: (id: string) =>
     jsonRequest<{ id: string }>("/api/assignments", "DELETE", { id }),
 
-  importCalendar: (
-    file: File,
-    classification: CalendarClassification,
-    area: "school" | "extracurricular",
-  ) => {
+  importCalendar: (file: File) => {
     const body = new FormData();
     body.set("file", file);
-    body.set("classification", classification);
-    body.set("area", area);
     return apiRequest<CalendarImportResponse>("/api/calendar/import", {
       method: "POST",
       body,
