@@ -43,6 +43,23 @@ const subscribeToLocation = () => () => {};
 const isPlanTodayRoute = () =>
   new URLSearchParams(window.location.search).get("today") === "1";
 const dateWarningPattern = /date|deadline|timestamp/i;
+const missingFieldLabel = (field: ParsedAssignment["missingFields"][number]) =>
+  ({
+    title: "task name",
+    area: "area",
+    course: "course",
+    activityLabel: "activity or club",
+    dueAt: "due date",
+    estimatedMinutes: "duration",
+    priority: "priority",
+    taskType: "task type",
+  })[field];
+const relevantMissingFields = (draft: ParsedAssignment) =>
+  draft.missingFields.filter((field) =>
+    resolveArea(draft) === "school"
+      ? field !== "activityLabel"
+      : field !== "course",
+  );
 function readPendingReview(): {
   text: string;
   drafts: ParsedAssignment[];
@@ -330,52 +347,67 @@ export function Planner() {
                 key={`${draft.title}-${index}`}
                 className={`border-l-2 ${resolveArea(draft) === "school" ? "border-l-accent" : "border-l-amber-300"}`}
               >
-                <CardContent className="grid gap-4 p-4 lg:grid-cols-[1.5fr_.8fr_1fr_1fr_90px_44px] lg:items-end">
-                  <Field label="Task" warning={draft.confidence < 0.75}>
-                    <Input
-                      value={draft.title}
-                      onChange={(event) =>
-                        update(index, { title: event.target.value })
-                      }
-                    />
-                  </Field>
-                  <Field label="Area">
-                    <select
-                      aria-label={`Area for ${draft.title}`}
-                      value={resolveArea(draft)}
-                      onChange={(event) =>
-                        update(index, { area: event.target.value as WorkArea })
-                      }
-                      className="input"
-                    >
-                      <option value="school">School</option>
-                      <option value="extracurricular">EC</option>
-                    </select>
-                  </Field>
-                  <Field
-                    label={
-                      resolveArea(draft) === "school"
-                        ? "Course"
-                        : "Activity / club"
-                    }
-                    warning={draft.missingFields.includes("course")}
-                  >
-                    <Input
-                      value={
-                        resolveArea(draft) === "school"
-                          ? (draft.course ?? "")
-                          : (draft.activityLabel ?? "")
-                      }
-                      onChange={(event) =>
-                        update(
-                          index,
-                          resolveArea(draft) === "school"
-                            ? { course: event.target.value || null }
-                            : { activityLabel: event.target.value || null },
+                <CardContent className="space-y-3 p-4">
+                  <div className="grid grid-cols-[minmax(0,1fr)_44px] items-end gap-3">
+                    <Field label="Task" warning={draft.missingFields.includes("title")}>
+                      <Input
+                        value={draft.title}
+                        onChange={(event) =>
+                          update(index, {
+                            title: event.target.value,
+                            missingFields: event.target.value.trim()
+                              ? draft.missingFields.filter((field) => field !== "title")
+                              : Array.from(new Set([...draft.missingFields, "title"])),
+                          })
+                        }
+                      />
+                    </Field>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Delete ${draft.title}`}
+                      onClick={() =>
+                        setDrafts((current) =>
+                          current.filter((_, itemIndex) => itemIndex !== index),
                         )
                       }
-                    />
-                  </Field>
+                    >
+                      <Trash2 size={17} />
+                    </Button>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <Field
+                      label={
+                        resolveArea(draft) === "school"
+                          ? "Course"
+                          : "Activity / club"
+                      }
+                      warning={draft.missingFields.includes(
+                        resolveArea(draft) === "school" ? "course" : "activityLabel",
+                      )}
+                    >
+                      <Input
+                        value={
+                          resolveArea(draft) === "school"
+                            ? (draft.course ?? "")
+                            : (draft.activityLabel ?? "")
+                        }
+                        onChange={(event) => {
+                          const field =
+                            resolveArea(draft) === "school"
+                              ? "course"
+                              : "activityLabel";
+                          update(index, {
+                            ...(field === "course"
+                              ? { course: event.target.value || null }
+                              : { activityLabel: event.target.value || null }),
+                            missingFields: event.target.value.trim()
+                              ? draft.missingFields.filter((item) => item !== field)
+                              : Array.from(new Set([...draft.missingFields, field])),
+                          });
+                        }}
+                      />
+                    </Field>
                   <Field
                     label="Due"
                     warning={draft.missingFields.includes("dueAt")}
@@ -413,37 +445,60 @@ export function Planner() {
                       }}
                     />
                   </Field>
-                  <Field
-                    label="Minutes"
-                    warning={draft.missingFields.includes("estimatedMinutes")}
-                  >
-                    <Input
-                      type="number"
-                      min="0"
-                      step="5"
-                      value={draft.estimatedMinutes ?? ""}
-                      onChange={(event) =>
-                        update(index, {
-                          estimatedMinutes: Number(event.target.value) || null,
-                        })
-                      }
-                    />
-                  </Field>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Delete ${draft.title}`}
-                    onClick={() =>
-                      setDrafts((current) =>
-                        current.filter((_, itemIndex) => itemIndex !== index),
-                      )
-                    }
-                  >
-                    <Trash2 size={17} />
-                  </Button>
-                  {draft.warnings.length > 0 && (
-                    <p className="text-xs text-amber-200 lg:col-span-full">
-                      {draft.warnings.join(" ")}
+                    <Field
+                      label="Duration (minutes)"
+                      warning={draft.missingFields.includes("estimatedMinutes")}
+                    >
+                      <Input
+                        type="number"
+                        min="5"
+                        step="5"
+                        value={draft.estimatedMinutes ?? ""}
+                        onChange={(event) => {
+                          const minutes = Number(event.target.value) || null;
+                          update(index, {
+                            estimatedMinutes: minutes,
+                            missingFields: minutes
+                              ? draft.missingFields.filter(
+                                  (field) => field !== "estimatedMinutes",
+                                )
+                              : Array.from(
+                                  new Set([
+                                    ...draft.missingFields,
+                                    "estimatedMinutes",
+                                  ]),
+                                ),
+                          });
+                        }}
+                      />
+                    </Field>
+                    <Field label="Area">
+                      <select
+                        aria-label={`Area for ${draft.title}`}
+                        value={resolveArea(draft)}
+                        onChange={(event) =>
+                          update(index, {
+                            area: event.target.value as WorkArea,
+                          })
+                        }
+                        className="input"
+                      >
+                        <option value="school">School</option>
+                        <option value="extracurricular">EC</option>
+                      </select>
+                    </Field>
+                  </div>
+                  {relevantMissingFields(draft).length > 0 && (
+                    <p
+                      role="status"
+                      className="flex items-center gap-2 text-xs text-amber-200"
+                    >
+                      <AlertTriangle size={14} />
+                      Add:{" "}
+                      {relevantMissingFields(draft)
+                        .map(missingFieldLabel)
+                        .join(", ")}
+                      .
                     </p>
                   )}
                 </CardContent>

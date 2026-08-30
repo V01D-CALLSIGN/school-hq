@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Brain,
   CalendarClock,
+  CalendarDays,
   CheckCircle2,
   Clock3,
   LoaderCircle,
@@ -73,6 +74,22 @@ export function Dashboard() {
   const nextEvent = upcomingEvents.find(
     (event) => area === "all" || resolveArea(event) === area,
   );
+  const todayEvents = events
+    .filter(
+      (event) =>
+        event.classification !== "ignored" &&
+        new Date(event.startsAt).toDateString() === renderedAt.toDateString() &&
+        (area === "all" || resolveArea(event) === area),
+    )
+    .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+  const currentEvent = todayEvents.find(
+    (event) =>
+      Date.parse(event.startsAt) <= renderedAt.getTime() &&
+      Date.parse(event.endsAt) > renderedAt.getTime(),
+  );
+  const nextTodayEvent = todayEvents.find(
+    (event) => Date.parse(event.startsAt) > renderedAt.getTime(),
+  );
   const statsSlice = stats?.[area === "all" ? "combined" : area];
   const hour = renderedAt.getHours();
   const greeting =
@@ -114,7 +131,7 @@ export function Dashboard() {
                 day: "numeric",
               }).format(renderedAt)}
             </p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
+            <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-4xl">
               {greeting}
               {identity ? `, ${identity}` : "."}
             </h1>
@@ -149,6 +166,12 @@ export function Dashboard() {
           </div>
         </div>
       </header>
+      <TodayTimeline
+        events={todayEvents}
+        current={currentEvent}
+        next={nextTodayEvent}
+        now={renderedAt}
+      />
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(300px,.75fr)]">
         <div className="space-y-5">
           <Card className="corner-cut border-accent/25 bg-[linear-gradient(rgba(87,215,241,.035)_1px,transparent_1px),var(--card)] bg-[length:100%_27px]">
@@ -340,6 +363,129 @@ export function Dashboard() {
       </div>
     </div>
   );
+}
+function TodayTimeline({
+  events,
+  current,
+  next,
+  now,
+}: {
+  events: CalendarEvent[];
+  current?: CalendarEvent;
+  next?: CalendarEvent;
+  now: Date;
+}) {
+  const freeUntil = current
+    ? next
+      ? Date.parse(next.startsAt) - Date.parse(current.endsAt)
+      : 0
+    : next
+      ? Date.parse(next.startsAt) - now.getTime()
+      : 0;
+  const freeMinutes = Math.max(0, Math.round(freeUntil / 60000));
+  return (
+    <Card className="border-accent/30">
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[.16em] text-accent">
+              Today’s timeline
+            </p>
+            <h2 className="mt-1 text-lg font-semibold">
+              {events.length
+                ? `${events.length} scheduled block${events.length === 1 ? "" : "s"}`
+                : "No time scheduled yet"}
+            </h2>
+          </div>
+          <Button asChild variant="secondary" size="sm">
+            <Link href="/calendar">
+              <CalendarDays size={15} />
+              View calendar
+            </Link>
+          </Button>
+        </div>
+        {events.length ? (
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <TimelineStatus
+              label="Now"
+              value={current?.title ?? "Nothing in progress"}
+              detail={current ? timeRange(current) : "You’re between blocks"}
+              active={Boolean(current)}
+            />
+            <TimelineStatus
+              label="Next"
+              value={next?.title ?? "Day is clear after this"}
+              detail={next ? timeRange(next) : "No later blocks"}
+            />
+            <TimelineStatus
+              label="Free time"
+              value={
+                next
+                  ? freeMinutes
+                    ? durationLabel(freeMinutes)
+                    : "Back-to-back"
+                  : "Rest of day"
+              }
+              detail={
+                freeMinutes && next
+                  ? `Available until ${new Date(next.startsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+                  : current
+                    ? `Open after ${new Date(current.endsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+                    : "No later blocks"
+              }
+            />
+          </div>
+        ) : (
+          <div className="mt-4 flex flex-col gap-3 rounded-md border border-dashed border-border bg-card-strong p-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted">
+              Brain-dump your homework, then place each task into today.
+            </p>
+            <Button asChild size="sm">
+              <Link href="/planner?today=1">
+                <Sparkles size={15} />
+                Plan today
+              </Link>
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+function TimelineStatus({
+  label,
+  value,
+  detail,
+  active = false,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  active?: boolean;
+}) {
+  return (
+    <div className={`rounded-md border-l-2 bg-card-strong p-3 ${active ? "border-l-success" : "border-l-accent"}`}>
+      <p className="font-mono text-[9px] uppercase tracking-[.14em] text-muted">
+        {label}
+      </p>
+      <p className="mt-1 truncate text-sm font-semibold">{value}</p>
+      <p className="mt-1 font-mono text-[10px] text-muted">{detail}</p>
+    </div>
+  );
+}
+function timeRange(event: CalendarEvent) {
+  const format = (value: string) =>
+    new Date(value).toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  return `${format(event.startsAt)}–${format(event.endsAt)}`;
+}
+function durationLabel(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (!hours) return `${minutes} min`;
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
 }
 function UpcomingLane({
   title,

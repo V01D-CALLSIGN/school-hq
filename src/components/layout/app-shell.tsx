@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { BrandMark } from "@/components/brand-mark";
-import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
@@ -28,7 +27,7 @@ import { useAuth } from "@/features/auth/auth-provider";
 import { cn } from "@/lib/utils";
 const nav = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
-  { href: "/assignments", label: "Assignments", icon: BookCheck },
+  { href: "/assignments", label: "Tasks", icon: BookCheck },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/planner", label: "Planner", icon: ListTodo },
   { href: "/focus", label: "Focus", icon: Focus },
@@ -188,17 +187,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="status-pulse size-1.5 rounded-full bg-success" />
             System ready
           </div>
-          <Button
-            asChild
-            variant="ghost"
-            size="sm"
-            className="ml-auto text-accent"
-          >
-            <Link href="/planner?today=1">
-              <Sparkles size={15} />
-              Plan today
-            </Link>
-          </Button>
+          <span className="ml-auto hidden font-mono text-[10px] uppercase tracking-wide text-muted sm:block">
+            School HQ
+          </span>
         </header>
         <main
           id="main-content"
@@ -214,23 +205,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {[
           nav[0],
           nav[1],
-          nav[3],
+          { href: "/planner?today=1", label: "Plan today", icon: Sparkles },
+          nav[2],
           nav[4],
-          { href: "#menu", label: "More", icon: Menu },
         ].map(({ href, label, icon: Icon }) => {
           const active =
-            href !== "#menu" &&
-            (href === "/" ? pathname === "/" : pathname.startsWith(href));
-          return href === "#menu" ? (
-            <button
-              key={href}
-              onClick={() => setMobileOpen(true)}
-              className="flex min-h-14 flex-col items-center justify-center gap-1 font-mono text-[9px] text-muted"
-            >
-              <Icon size={19} />
-              {label}
-            </button>
-          ) : (
+            href === "/"
+              ? pathname === "/"
+              : pathname.startsWith(href.split("?")[0]);
+          const primary = href.includes("today=1");
+          return (
             <Link
               key={href}
               href={href}
@@ -238,11 +222,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               className={cn(
                 "relative flex min-h-14 flex-col items-center justify-center gap-1 font-mono text-[9px] text-muted",
                 active && "text-accent",
-                active &&
+                active && !primary &&
                   "after:absolute after:top-0 after:h-0.5 after:w-7 after:bg-accent",
+                primary && "text-accent",
               )}
             >
-              <Icon size={19} />
+              <span
+                className={cn(
+                  primary &&
+                    "-mt-5 grid size-12 place-items-center rounded-full border-4 border-[#090c12] bg-accent text-[#061217] shadow-[0_0_20px_rgba(87,215,241,.28)]",
+                )}
+              >
+                <Icon size={primary ? 21 : 19} />
+              </span>
               {label}
             </Link>
           );

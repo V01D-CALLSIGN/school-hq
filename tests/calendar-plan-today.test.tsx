@@ -1,15 +1,19 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { CalendarEvent } from "@/types/api";
 
-const { createCalendarEvent } = vi.hoisted(() => ({
+const { createCalendarEvent, getCalendarWeek, patchCalendarEvent } = vi.hoisted(() => ({
   createCalendarEvent: vi.fn(),
+  getCalendarWeek: vi.fn<() => Promise<CalendarEvent[]>>(async () => []),
+  patchCalendarEvent: vi.fn(),
 }));
 
 vi.mock("@/lib/api-client", () => ({
   api: {
-    getCalendarWeek: vi.fn(async () => []),
+    getCalendarWeek,
     createCalendarEvent,
+    patchCalendarEvent,
   },
 }));
 
@@ -37,6 +41,9 @@ describe("Plan today calendar handoff", () => {
   beforeEach(() => {
     sessionStorage.clear();
     createCalendarEvent.mockReset();
+    getCalendarWeek.mockReset();
+    getCalendarWeek.mockResolvedValue([]);
+    patchCalendarEvent.mockReset();
     createCalendarEvent.mockImplementation(async (body) => ({
       ...body,
       id: "event-1",
@@ -69,5 +76,36 @@ describe("Plan today calendar handoff", () => {
     );
     expect(sessionStorage.getItem("school-hq-plan-today-v1")).toBeNull();
     expect(screen.getAllByText(assignment.title).length).toBeGreaterThan(0);
+  });
+
+  it("lets the user adjust a scheduled block", async () => {
+    const startsAt = new Date();
+    startsAt.setMinutes(0, 0, 0);
+    const event: CalendarEvent = {
+      id: "event-edit",
+      calendarImportId: "manual",
+      sourceUid: "manual-edit",
+      recurrenceId: null,
+      title: "Review lab notes",
+      description: null,
+      location: null,
+      startsAt: startsAt.toISOString(),
+      endsAt: new Date(startsAt.getTime() + 30 * 60_000).toISOString(),
+      allDay: false,
+      classification: "busy",
+      area: "school",
+      originalTimezone: "America/Chicago",
+    };
+    getCalendarWeek.mockResolvedValue([event]);
+    patchCalendarEvent.mockImplementation(async (body) => ({ ...event, ...body }));
+    const user = userEvent.setup();
+    render(<CalendarView />);
+    const editButtons = await screen.findAllByRole("button", {
+      name: /edit review lab notes/i,
+    });
+    await user.click(editButtons[0]);
+    expect(screen.getByRole("dialog", { name: /adjust time block/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(patchCalendarEvent).toHaveBeenCalledOnce());
   });
 });

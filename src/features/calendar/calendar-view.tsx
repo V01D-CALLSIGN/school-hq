@@ -7,6 +7,7 @@ import {
   Clock3,
   FileUp,
   LoaderCircle,
+  Pencil,
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -104,8 +105,11 @@ export function CalendarView() {
   const [area, setArea] = useAreaFilter();
   const [uploadOpen, setUploadOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [editing, setEditing] = useState<CalendarEvent | null>(null);
+  const [editTimes, setEditTimes] = useState({ startsAt: "", endsAt: "" });
   const [loading, setLoading] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
+  const selectedDayRef = useRef<HTMLButtonElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [classification, setClassification] =
     useState<CalendarClassification>("busy");
@@ -130,11 +134,25 @@ export function CalendarView() {
       .catch((reason: Error) => toast.error(reason.message))
       .finally(() => setLoading(false));
   }, [week, timezone]);
+  useEffect(() => {
+    selectedDayRef.current?.scrollIntoView?.({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  }, [selected, week]);
   const visible = useMemo(
     () =>
       events.filter((event) => area === "all" || resolveArea(event) === area),
     [events, area],
   );
+  const selectedEvents = visible
+    .filter(
+      (event) =>
+        new Date(event.startsAt).toDateString() ===
+        days[selected].toDateString(),
+    )
+    .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
   async function upload() {
     if (!file) return;
     setLoading(true);
@@ -222,11 +240,79 @@ export function CalendarView() {
     } else {
       sessionStorage.removeItem(pendingTodayKey);
       window.history.replaceState({}, "", "/calendar");
+      const first = created.reduce(
+        (earliest, event) =>
+          Date.parse(event.startsAt) < Date.parse(earliest.startsAt)
+            ? event
+            : earliest,
+        created[0],
+      );
+      const last = created.reduce(
+        (latest, event) =>
+          Date.parse(event.endsAt) > Date.parse(latest.endsAt) ? event : latest,
+        created[0],
+      );
+      const formatTime = (value: string) =>
+        new Date(value).toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        });
       toast.success(
-        `${created.length} task${created.length === 1 ? "" : "s"} scheduled for today`,
+        `${created.length} task${created.length === 1 ? "" : "s"} added · ${formatTime(first.startsAt)}–${formatTime(last.endsAt)}`,
+        {
+          action: {
+            label: "Undo",
+            onClick: () => void undoScheduledEvents(created),
+          },
+        },
       );
     }
     setLoading(false);
+  }
+  async function undoScheduledEvents(created: CalendarEvent[]) {
+    const ids = new Set(created.map((event) => event.id));
+    setEvents((current) => current.filter((event) => !ids.has(event.id)));
+    const results = await Promise.allSettled(
+      created.map((event) => api.deleteCalendarEvent(event.id)),
+    );
+    const failed = created.filter(
+      (_, index) => results[index].status === "rejected",
+    );
+    if (failed.length) {
+      setEvents((current) => [...current, ...failed]);
+      toast.error("Some scheduled blocks could not be restored");
+    } else {
+      toast.success("Today’s new blocks were removed");
+    }
+  }
+  function beginEdit(event: CalendarEvent) {
+    setEditing(event);
+    setEditTimes({
+      startsAt: toDateTimeLocalValue(event.startsAt),
+      endsAt: toDateTimeLocalValue(event.endsAt),
+    });
+  }
+  async function saveEdit() {
+    if (!editing || !editTimes.startsAt || !editTimes.endsAt) return;
+    setLoading(true);
+    try {
+      const updated = await api.patchCalendarEvent({
+        id: editing.id,
+        startsAt: fromDateTimeLocalValue(editTimes.startsAt),
+        endsAt: fromDateTimeLocalValue(editTimes.endsAt),
+      });
+      setEvents((current) =>
+        current.map((event) => (event.id === updated.id ? updated : event)),
+      );
+      setEditing(null);
+      toast.success("Time block updated");
+    } catch (reason) {
+      toast.error(
+        reason instanceof Error ? reason.message : "Could not update time block",
+      );
+    } finally {
+      setLoading(false);
+    }
   }
   async function removeEvent(event: CalendarEvent) {
     const previous = events;
@@ -391,6 +477,7 @@ export function CalendarView() {
       >
         {days.map((date, index) => (
           <button
+            ref={selected === index ? selectedDayRef : undefined}
             key={date.toISOString()}
             onClick={() => setSelected(index)}
             className={`min-h-11 shrink-0 rounded-lg border-l-2 px-4 font-mono text-xs ${selected === index ? "border-l-accent bg-accent/10 text-accent" : "border-border bg-card text-muted"}`}
@@ -402,32 +489,38 @@ export function CalendarView() {
       <Card className="md:hidden">
         <CardContent className="space-y-3">
           <p className="font-mono text-xs uppercase tracking-[.15em] text-muted">
-            Agenda //{" "}
+            Timeline //{" "}
             {days[selected].toLocaleDateString([], {
               weekday: "long",
               month: "short",
               day: "numeric",
             })}
           </p>
-          {visible
-            .filter(
-              (event) =>
-                new Date(event.startsAt).toDateString() ===
-                days[selected].toDateString(),
-            )
-            .map((event) => (
+          {selectedEvents.map((event, index) => (
+            <div
+              key={event.id}
+              className="grid grid-cols-[54px_12px_minmax(0,1fr)] gap-2"
+            >
+              <span className="pt-3 text-right font-mono text-[10px] text-muted">
+                {new Date(event.startsAt).toLocaleTimeString([], {
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </span>
+              <span className="relative flex justify-center">
+                <i className="z-10 mt-4 size-2.5 rounded-full bg-accent" />
+                {index < selectedEvents.length - 1 && (
+                  <i className="absolute bottom-[-.75rem] top-5 w-px bg-border" />
+                )}
+              </span>
               <EventCard
-                key={event.id}
                 event={event}
+                onEdit={() => beginEdit(event)}
                 onDelete={() => void removeEvent(event)}
               />
-            ))}
-          {!loading &&
-            !visible.some(
-              (event) =>
-                new Date(event.startsAt).toDateString() ===
-                days[selected].toDateString(),
-            ) && (
+            </div>
+          ))}
+          {!loading && !selectedEvents.length && (
               <div className="py-14 text-center">
                 <CalendarPlus className="mx-auto mb-3 text-accent" />
                 <p className="font-semibold">This lane is clear.</p>
@@ -497,6 +590,14 @@ export function CalendarView() {
                       style={{ top, height }}
                     >
                       <strong className="block truncate">{event.title}</strong>
+                      <button
+                        type="button"
+                        aria-label={`Edit ${event.title}`}
+                        className="absolute bottom-1 right-1 rounded p-0.5 opacity-60 hover:opacity-100"
+                        onClick={() => beginEdit(event)}
+                      >
+                        <Pencil size={11} />
+                      </button>
                       <button
                         type="button"
                         aria-label={`Delete ${event.title}`}
@@ -672,14 +773,77 @@ export function CalendarView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog
+        open={Boolean(editing)}
+        onOpenChange={(open) => !open && setEditing(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adjust time block</DialogTitle>
+            <DialogDescription>
+              Change when you will work or extend the block’s duration.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-5 grid gap-3">
+            <p className="text-sm font-semibold">{editing?.title}</p>
+            <label className="text-xs font-semibold text-muted">
+              Starts
+              <Input
+                type="datetime-local"
+                className="mt-1.5"
+                value={editTimes.startsAt}
+                onChange={(event) =>
+                  setEditTimes((current) => ({
+                    ...current,
+                    startsAt: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <label className="text-xs font-semibold text-muted">
+              Ends
+              <Input
+                type="datetime-local"
+                className="mt-1.5"
+                value={editTimes.endsAt}
+                onChange={(event) =>
+                  setEditTimes((current) => ({
+                    ...current,
+                    endsAt: event.target.value,
+                  }))
+                }
+              />
+            </label>
+          </div>
+          <DialogFooter className="mt-5">
+            <Button variant="ghost" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                loading ||
+                !editTimes.startsAt ||
+                !editTimes.endsAt ||
+                Date.parse(editTimes.endsAt) <= Date.parse(editTimes.startsAt)
+              }
+              onClick={() => void saveEdit()}
+            >
+              {loading && <LoaderCircle className="animate-spin" size={16} />}
+              Save changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 function EventCard({
   event,
+  onEdit,
   onDelete,
 }: {
   event: CalendarEvent;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const start = new Date(event.startsAt),
@@ -687,14 +851,29 @@ function EventCard({
   return (
     <div
       className={`rounded-md border-l-[3px] border-y border-r p-3 ${visual(event)}`}
+      onClick={onEdit}
     >
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-semibold">{event.title}</p>
         <AreaBadge area={resolveArea(event)} />
         <button
           type="button"
+          aria-label={`Edit ${event.title}`}
+          onClick={(mouseEvent) => {
+            mouseEvent.stopPropagation();
+            onEdit();
+          }}
+          className="text-muted hover:text-accent"
+        >
+          <Pencil size={15} />
+        </button>
+        <button
+          type="button"
           aria-label={`Delete ${event.title}`}
-          onClick={onDelete}
+          onClick={(mouseEvent) => {
+            mouseEvent.stopPropagation();
+            onDelete();
+          }}
           className="text-muted hover:text-danger"
         >
           <Trash2 size={15} />
