@@ -39,7 +39,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { signOut } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  if (pathname === "/login") return <>{children}</>;
+  if (pathname === "/login" || pathname === "/login/") return <>{children}</>;
   const links = (mobile = false) =>
     nav.map(({ href, label, icon: Icon }) => {
       const active =

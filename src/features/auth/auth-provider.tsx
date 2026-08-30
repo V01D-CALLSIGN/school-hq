@@ -23,6 +23,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(configured);
   const pathname = usePathname();
+  const isLoginRoute = pathname === "/login" || pathname === "/login/";
   const router = useRouter();
   useEffect(() => {
     if (!configured) return;
@@ -40,10 +41,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [configured]);
   useEffect(() => {
     if (loading) return;
-    if (!session && pathname !== "/login")
+    if (!session && !isLoginRoute)
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-    if (session && pathname === "/login") router.replace("/");
-  }, [loading, pathname, router, session]);
+    if (session && isLoginRoute) router.replace("/");
+  }, [isLoginRoute, loading, pathname, router, session]);
   async function signOut() {
     await getSupabaseBrowserClient()?.auth.signOut({ scope: "local" });
     localStorage.removeItem("school-hq-focus-session-v2");
@@ -55,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.refresh();
   }
   const value = { session, loading, signOut };
-  if (!isSupabaseConfigured() && pathname !== "/login")
+  if (!isSupabaseConfigured() && !isLoginRoute)
     return (
       <main className="grid min-h-dvh place-items-center p-6 text-center">
         <div>
@@ -69,7 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         </div>
       </main>
     );
-  if (loading && pathname !== "/login")
+  if (loading && !isLoginRoute)
     return (
       <main
         className="grid min-h-dvh place-items-center"
@@ -78,6 +79,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         <LoaderCircle className="animate-spin text-accent" />
       </main>
     );
-  if (!session && pathname !== "/login") return null;
+  if (!session && !isLoginRoute) return null;
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
