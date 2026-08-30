@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyBrainDumpContext,
   MockBrainDumpParser,
   resolveRelativeAssignments,
 } from "@/lib/brain-dump/parser";
@@ -65,5 +66,27 @@ describe("mock brain dump parser", () => {
     expect(result.ambiguousDateText).toBeNull();
     expect(result.missingFields).not.toContain("dueAt");
     expect(result.warnings).toEqual([]);
+  });
+
+  it("applies 'everything is due tomorrow' to every relevant task", async () => {
+    const input = {
+      text: "Math worksheet 30 minutes\nHistory outline 45 minutes\nEverything is due tomorrow",
+      timezone: "America/Chicago",
+      referenceTime: "2026-08-30T21:00:00.000Z",
+    };
+    const results = applyBrainDumpContext(await parser.parse(input), input);
+    expect(results).toHaveLength(2);
+    expect(results.every((item) => item.dueAt === "2026-09-01T04:59:00.000Z")).toBe(true);
+  });
+
+  it("resolves task and project context without requiring an explicit time", async () => {
+    const input = {
+      text: "Research sources 60 minutes\nDraft report 2 hours\nThis project is due next week",
+      timezone: "America/Chicago",
+      referenceTime: "2026-08-30T21:00:00.000Z",
+    };
+    const results = applyBrainDumpContext(await parser.parse(input), input);
+    expect(results).toHaveLength(2);
+    expect(results.every((item) => item.dueAt === "2026-09-05T04:59:00.000Z")).toBe(true);
   });
 });

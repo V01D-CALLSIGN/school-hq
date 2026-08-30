@@ -75,7 +75,7 @@ function readPendingReview(): {
   }
 }
 const reasonLabel = {
-  NO_AVAILABILITY: "No open study window",
+  NO_AVAILABILITY: "No imported Study Block in this range",
   DEADLINE_PASSED: "Deadline already passed",
   INSUFFICIENT_CAPACITY: "Not enough open time",
   INVALID_DURATION: "Duration needs review",
@@ -103,6 +103,7 @@ export function Planner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [plan, setPlan] = useState<StudyPlan | null>(null);
+  const [plannedAssignmentIds, setPlannedAssignmentIds] = useState<string[]>([]);
   const [mode, setMode] = useAreaFilter();
   useEffect(() => {
     void Promise.all([api.listAssignments(), api.listCourses()])
@@ -136,10 +137,17 @@ export function Planner() {
       setLoading(false);
     }
   }
-  const range = () => {
+  const range = (assignments: Assignment[]) => {
     const start = new Date();
-    start.setMinutes(0, 0, 0);
-    const end = new Date(start.getTime() + 36 * 60 * 60 * 1000);
+    start.setSeconds(0, 0);
+    start.setMinutes(Math.ceil(start.getMinutes() / 15) * 15);
+    const minimumEnd = start.getTime() + 8 * 24 * 60 * 60 * 1000;
+    const latestDue = Math.max(
+      0,
+      ...assignments.flatMap((assignment) => assignment.dueAt ? [Date.parse(assignment.dueAt)] : []),
+    );
+    const maximumEnd = start.getTime() + 30 * 24 * 60 * 60 * 1000;
+    const end = new Date(Math.min(maximumEnd, Math.max(minimumEnd, latestDue + 60_000)));
     return {
       rangeStart: start.toISOString(),
       rangeEnd: end.toISOString(),
@@ -187,19 +195,17 @@ export function Planner() {
         confirmed.push(created);
       }
       setKnown((current) => [...confirmed, ...current]);
-      if (stage === "review") setDrafts([]);
-      if (planToday) {
-        sessionStorage.setItem(
-          "school-hq-plan-today-v1",
-          JSON.stringify(confirmed),
-        );
-        router.push("/calendar?plan=today");
-        return;
-      }
+      const assignmentIds = confirmed.length ? confirmed.map(({ id }) => id) : plannedAssignmentIds;
+      if (!assignmentIds.length) throw new Error("Add at least one task before generating a plan.");
+      if (confirmed.length) setPlannedAssignmentIds(assignmentIds);
+      const planningAssignments = confirmed.length
+        ? confirmed
+        : known.filter((assignment) => assignmentIds.includes(assignment.id));
       setPlan(
         await api.generatePlan({
-          ...range(),
+          ...range(planningAssignments),
           area: mode === "all" ? undefined : mode,
+          assignmentIds,
         }),
       );
       setStage("timeline");
@@ -226,6 +232,15 @@ export function Planner() {
         itemIndex === index ? { ...item, ...patch } : item,
       ),
     );
+  const updateBlockTime = (id: string, field: "startsAt" | "endsAt", value: string) => {
+    if (!value) return;
+    setPlan((current) => current ? {
+      ...current,
+      blocks: current.blocks.map((block) => block.id === id
+        ? { ...block, [field]: fromDateTimeLocalValue(value), locked: true }
+        : block),
+    } : current);
+  };
   return (
     <div className="space-y-5">
       <PageHeader
@@ -548,9 +563,7 @@ export function Planner() {
               ) : (
                 <Sparkles size={17} />
               )}
-              {planToday
-                ? "Continue to today’s calendar"
-                : "Confirm and generate plan"}
+              {planToday ? "Create today’s work plan" : "Confirm and generate plan"}
             </Button>
           </div>
         </div>
@@ -633,6 +646,16 @@ export function Planner() {
                         )}
                         m {assignment && `· ${assignment.priority}`}
                       </p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <label className="font-mono text-[9px] uppercase text-muted">
+                          Starts
+                          <Input className="mt-1" type="datetime-local" value={toDateTimeLocalValue(block.startsAt)} onChange={(event) => updateBlockTime(block.id, "startsAt", event.target.value)} />
+                        </label>
+                        <label className="font-mono text-[9px] uppercase text-muted">
+                          Ends
+                          <Input className="mt-1" type="datetime-local" value={toDateTimeLocalValue(block.endsAt)} onChange={(event) => updateBlockTime(block.id, "endsAt", event.target.value)} />
+                        </label>
+                      </div>
                     </div>
                     <span />
                   </div>
@@ -671,12 +694,24 @@ export function Planner() {
             )}
             <Button
               className="w-full"
-              onClick={() =>
-                void api
-                  .patchPlan(plan.id, { status: "active" })
-                  .then(setPlan)
+              onClick={() => {
+                setLoading(true);
+                void api.patchPlan(plan.id, {
+                  status: "active",
+                  blocks: plan.blocks.map((block) => ({
+                    id: block.id,
+                    startsAt: block.startsAt,
+                    endsAt: block.endsAt,
+                    locked: block.locked,
+                  })),
+                })
+                  .then((activePlan) => {
+                    setPlan(activePlan);
+                    if (planToday) router.push("/calendar");
+                  })
                   .catch((reason: Error) => setError(reason.message))
-              }
+                  .finally(() => setLoading(false));
+              }}
               disabled={plan.status === "active"}
             >
               <Check size={17} />
@@ -685,10 +720,10 @@ export function Planner() {
             <Button
               variant="ghost"
               className="w-full"
-              onClick={() => setStage("review")}
+              onClick={() => { setStage("dump"); setPlan(null); }}
             >
               <ChevronLeft size={16} />
-              Edit inputs
+              Start over
             </Button>
           </aside>
         </div>

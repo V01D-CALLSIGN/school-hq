@@ -115,6 +115,7 @@ export function generateSchedule(input: SchedulingInput): SchedulingResult {
   const unscheduledTasks: UnscheduledTask[] = [];
   const activeIds = new Set(assignments.map(({ id }) => id));
   const scheduledAssignments = new Set<string>();
+  const scheduledMinutesByDay = new Map<string, number>();
   let sequence = blocks.length;
 
   for (const assignment of assignments) {
@@ -126,7 +127,15 @@ export function generateSchedule(input: SchedulingInput): SchedulingResult {
       unscheduledTasks.push({ assignmentId: assignment.id, remainingMinutes: 1, reason: "INVALID_DURATION" });
       continue;
     }
-    const deadline = assignment.dueAt ? Math.min(Date.parse(assignment.dueAt), endMs) : endMs;
+    const rawDeadline = assignment.dueAt ? Math.min(Date.parse(assignment.dueAt), endMs) : endMs;
+    const localStart = rangeStart.setZone(input.preferences.timezone).startOf("day");
+    const localDue = DateTime.fromMillis(rawDeadline, { zone: input.preferences.timezone });
+    const daysUntilDue = Math.round(localDue.startOf("day").diff(localStart, "days").days);
+    // A date-only deadline means the work should be finished before that day begins.
+    // This is especially important for “due tomorrow”: schedule it today.
+    const deadline = assignment.dueAt && daysUntilDue > 0
+      ? Math.min(localDue.startOf("day").toMillis(), endMs)
+      : rawDeadline;
     if (deadline <= startMs) {
       unscheduledTasks.push({ assignmentId: assignment.id, remainingMinutes: assignment.estimatedMinutes, reason: "DEADLINE_PASSED" });
       continue;
@@ -134,9 +143,20 @@ export function generateSchedule(input: SchedulingInput): SchedulingResult {
     const lockedMinutes = input.lockedBlocks.filter((block) => block.kind === "work" && block.assignmentId === assignment.id)
       .reduce((total, block) => total + Math.max(0, Date.parse(block.endsAt) - Date.parse(block.startsAt)) / 60_000, 0);
     let remaining = Math.max(0, assignment.estimatedMinutes - Math.floor(lockedMinutes));
+    const usedDays = new Set<string>();
     while (remaining > 0) {
       const desired = Math.min(input.preferences.defaultBlockMinutes, remaining);
-      const slotIndex = slots.findIndex((slot) => slot.start < deadline && Math.min(slot.end, deadline) - slot.start >= Math.min(desired, input.preferences.minimumSessionMinutes) * 60_000);
+      const eligible = slots
+        .map((slot, index) => ({ slot, index, day: DateTime.fromMillis(slot.start, { zone: input.preferences.timezone }).toISODate()! }))
+        .filter(({ slot }) => slot.start < deadline && Math.min(slot.end, deadline) - slot.start >= Math.min(desired, input.preferences.minimumSessionMinutes) * 60_000);
+      const pool = daysUntilDue > 1 && eligible.some(({ day }) => !usedDays.has(day))
+        ? eligible.filter(({ day }) => !usedDays.has(day))
+        : eligible;
+      pool.sort((a, b) => {
+        if (daysUntilDue <= 1) return a.slot.start - b.slot.start;
+        return (scheduledMinutesByDay.get(a.day) ?? 0) - (scheduledMinutesByDay.get(b.day) ?? 0) || a.slot.start - b.slot.start;
+      });
+      const slotIndex = pool[0]?.index ?? -1;
       if (slotIndex < 0) break;
       const slot = slots[slotIndex];
       const usableMinutes = Math.floor((Math.min(slot.end, deadline) - slot.start) / 60_000);
@@ -146,6 +166,9 @@ export function generateSchedule(input: SchedulingInput): SchedulingResult {
       const startIso = new Date(slot.start).toISOString();
       const endIso = new Date(workEnd).toISOString();
       blocks.push({ id: stableUuid(`${assignment.id}:work:${startIso}`), studyPlanId: input.planId, assignmentId: assignment.id, startsAt: startIso, endsAt: endIso, locked: false, kind: "work", sequence: sequence++ });
+      const workDay = DateTime.fromMillis(slot.start, { zone: input.preferences.timezone }).toISODate()!;
+      usedDays.add(workDay);
+      scheduledMinutesByDay.set(workDay, (scheduledMinutesByDay.get(workDay) ?? 0) + workMinutes);
       remaining -= workMinutes;
       let nextStart = workEnd;
       if (remaining > 0 && input.preferences.breakMinutes > 0 && slot.end - workEnd >= (input.preferences.breakMinutes + input.preferences.minimumSessionMinutes) * 60_000) {

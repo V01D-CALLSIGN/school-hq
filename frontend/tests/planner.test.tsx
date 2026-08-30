@@ -43,6 +43,27 @@ vi.mock("@/lib/api-client", () => ({
       createdAt: "2026-08-30T00:00:00.000Z",
       updatedAt: "2026-08-30T00:00:00.000Z",
     })),
+    generatePlan: vi.fn(async () => ({
+      id: "plan-1",
+      rangeStart: "2026-08-30T17:00:00.000Z",
+      rangeEnd: "2026-09-07T17:00:00.000Z",
+      timezone: "America/Chicago",
+      status: "draft",
+      areaFilter: "combined",
+      blocks: [{
+        id: "block-1", studyPlanId: "plan-1", assignmentId: "assignment-1",
+        startsAt: "2026-08-30T18:00:00.000Z", endsAt: "2026-08-30T18:45:00.000Z",
+        locked: false, kind: "work", sequence: 0,
+      }],
+      unscheduledTasks: [], createdAt: "2026-08-30T00:00:00.000Z", updatedAt: "2026-08-30T00:00:00.000Z",
+    })),
+    patchPlan: vi.fn(async () => ({
+      id: "plan-1",
+      rangeStart: "2026-08-30T17:00:00.000Z",
+      rangeEnd: "2026-09-07T17:00:00.000Z",
+      timezone: "America/Chicago", status: "active", areaFilter: "combined",
+      blocks: [], unscheduledTasks: [], createdAt: "2026-08-30T00:00:00.000Z", updatedAt: "2026-08-30T00:00:00.000Z",
+    })),
   },
 }));
 import { Planner } from "@/features/planner/planner";
@@ -75,7 +96,7 @@ describe("Planner", () => {
     ).toBeEnabled();
   });
 
-  it("sends reviewed dashboard tasks to today's calendar", async () => {
+  it("generates, reviews, and activates today's work plan before opening the calendar", async () => {
     window.history.replaceState({}, "", "/planner?today=1");
     const user = userEvent.setup();
     render(<Planner />);
@@ -86,12 +107,11 @@ describe("Planner", () => {
     await user.click(screen.getByRole("button", { name: /parse brain dump/i }));
     await user.click(
       await screen.findByRole("button", {
-        name: /continue to today’s calendar/i,
+        name: /create today’s work plan/i,
       }),
     );
-    expect(pushMock).toHaveBeenCalledWith("/calendar?plan=today");
-    expect(
-      JSON.parse(sessionStorage.getItem("school-hq-plan-today-v1") ?? "[]"),
-    ).toHaveLength(1);
+    await user.click(await screen.findByRole("button", { name: /use this plan/i }));
+    expect(pushMock).toHaveBeenCalledWith("/calendar");
+    expect(sessionStorage.getItem("school-hq-plan-today-v1")).toBeNull();
   });
 });

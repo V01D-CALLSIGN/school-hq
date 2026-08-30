@@ -296,11 +296,13 @@ export function CalendarView() {
     if (!editing || !editTimes.startsAt || !editTimes.endsAt) return;
     setLoading(true);
     try {
-      const updated = await api.patchCalendarEvent({
-        id: editing.id,
+      const times = {
         startsAt: fromDateTimeLocalValue(editTimes.startsAt),
         endsAt: fromDateTimeLocalValue(editTimes.endsAt),
-      });
+      };
+      const updated = editing.planBlockId
+        ? { ...editing, ...(await api.patchPlanBlock({ id: editing.planBlockId, ...times })) }
+        : await api.patchCalendarEvent({ id: editing.id, ...times });
       setEvents((current) =>
         current.map((event) => (event.id === updated.id ? updated : event)),
       );
@@ -318,7 +320,8 @@ export function CalendarView() {
     const previous = events;
     setEvents((current) => current.filter((item) => item.id !== event.id));
     try {
-      await api.deleteCalendarEvent(event.id);
+      if (event.planBlockId) await api.deletePlanBlock(event.planBlockId);
+      else await api.deleteCalendarEvent(event.id);
       toast.success("Event removed");
     } catch (reason) {
       setEvents(previous);
@@ -630,7 +633,7 @@ export function CalendarView() {
         </span>
         <span className="flex items-center gap-2">
           <i className="h-3 w-1 border-l border-dashed border-cyan-300" />
-          Available
+          Study Blocks
         </span>
       </div>
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
@@ -638,7 +641,7 @@ export function CalendarView() {
           <DialogHeader>
             <DialogTitle>Import calendar feed</DialogTitle>
             <DialogDescription>
-              Classification and area apply to every event in this file.
+              Import your own .ics schedule. Choose Study Blocks so planning fits assignments inside those times.
             </DialogDescription>
           </DialogHeader>
           <div className="mt-5 space-y-4">
@@ -666,7 +669,7 @@ export function CalendarView() {
               }
               options={[
                 ["busy", "Busy"],
-                ["study_available", "Available"],
+                ["study_available", "Study Blocks / available"],
                 ["ignored", "Ignore"],
               ]}
             />

@@ -9,6 +9,7 @@ import * as focusSessions from "@/app/api/focus-sessions/route";
 import * as stats from "@/app/api/stats/summary/route";
 import * as preferences from "@/app/api/scheduling-preferences/route";
 import * as calendarEvents from "@/app/api/calendar/events/route";
+import * as calendarPlanBlocks from "@/app/api/calendar/plan-blocks/route";
 import * as courses from "@/app/api/courses/route";
 
 describe("protected endpoint integration", () => {
@@ -19,6 +20,7 @@ describe("protected endpoint integration", () => {
     ["POST focus", focusSessions.POST, "POST"], ["GET stats", stats.GET, "GET"],
     ["GET preferences", preferences.GET, "GET"], ["PATCH preferences", preferences.PATCH, "PATCH"],
     ["PATCH calendar event", calendarEvents.PATCH, "PATCH"], ["GET courses", courses.GET, "GET"],
+    ["PATCH calendar plan block", calendarPlanBlocks.PATCH, "PATCH"],
   ];
   it.each(cases)("rejects unauthenticated %s", async (_, handler, method) => {
     const response = await handler(new Request("http://localhost/api/test", { method }));

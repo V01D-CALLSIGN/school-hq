@@ -94,6 +94,8 @@ export const calendarEventSchema = z.object({
   classification: calendarClassificationSchema,
   area: areaSchema,
   originalTimezone: z.string().max(100).nullable(),
+  planBlockId: uuidSchema.nullable().default(null),
+  assignmentId: uuidSchema.nullable().default(null),
 });
 
 const studyWindowBaseSchema = z.object({
@@ -205,6 +207,7 @@ export const generatePlanInputSchema = z.object({
   rangeEnd: isoDateTimeSchema,
   timezone: timezoneSchema,
   area: areaSchema.optional(),
+  assignmentIds: z.array(uuidSchema).min(1).max(100).optional(),
 }).refine((value) => Date.parse(value.rangeEnd) > Date.parse(value.rangeStart), {
   path: ["rangeEnd"], message: "rangeEnd must be after rangeStart",
 });

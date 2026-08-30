@@ -100,4 +100,57 @@ describe("scheduling engine", () => {
     expect(schedulesOverlap(combined.blocks)).toBe(false);
     expect(generateSchedule({ ...input, area: "extracurricular" }).blocks.filter((block) => block.kind === "work").every((block) => block.assignmentId === id(2))).toBe(true);
   });
+
+  it("schedules every due-tomorrow task today", () => {
+    const input = base();
+    input.rangeStart = "2026-08-30T16:00:00Z";
+    input.rangeEnd = "2026-09-02T00:00:00Z";
+    input.preferences = { ...input.preferences, timezone: "UTC" };
+    input.assignments = [
+      { ...input.assignments[0], id: id(1), dueAt: "2026-08-31T23:59:00Z", estimatedMinutes: 45 },
+      { ...input.assignments[0], id: id(2), dueAt: "2026-08-31T23:59:00Z", estimatedMinutes: 45 },
+    ];
+    input.studyWindows = [
+      { startsAt: "2026-08-30T16:00:00Z", endsAt: "2026-08-30T20:00:00Z" },
+      { startsAt: "2026-08-31T16:00:00Z", endsAt: "2026-08-31T20:00:00Z" },
+    ];
+    const work = generateSchedule(input).blocks.filter((block) => block.kind === "work");
+    expect(new Set(work.map((block) => block.assignmentId))).toEqual(new Set([id(1), id(2)]));
+    expect(work.every((block) => block.startsAt.startsWith("2026-08-30"))).toBe(true);
+  });
+
+  it("spreads a larger project over separate days before its deadline", () => {
+    const input = base();
+    input.rangeStart = "2026-08-30T08:00:00Z";
+    input.rangeEnd = "2026-09-06T00:00:00Z";
+    input.preferences = { ...input.preferences, timezone: "UTC", breakMinutes: 0 };
+    input.assignments = [{ ...input.assignments[0], dueAt: "2026-09-05T23:59:00Z", estimatedMinutes: 180 }];
+    input.studyWindows = Array.from({ length: 6 }, (_, day) => ({
+      startsAt: `2026-0${day < 2 ? "8" : "9"}-${String(30 + day > 31 ? day - 1 : 30 + day).padStart(2, "0")}T16:00:00Z`,
+      endsAt: `2026-0${day < 2 ? "8" : "9"}-${String(30 + day > 31 ? day - 1 : 30 + day).padStart(2, "0")}T18:00:00Z`,
+    }));
+    const dates = generateSchedule(input).blocks.filter((block) => block.kind === "work").map((block) => block.startsAt.slice(0, 10));
+    expect(new Set(dates).size).toBe(4);
+    expect(dates.every((date) => date < "2026-09-05")).toBe(true);
+  });
+
+  it("prioritizes urgent work while balancing later work", () => {
+    const input = base();
+    input.rangeStart = "2026-08-30T16:00:00Z";
+    input.rangeEnd = "2026-09-04T00:00:00Z";
+    input.preferences = { ...input.preferences, timezone: "UTC", breakMinutes: 0 };
+    input.assignments = [
+      { ...input.assignments[0], id: id(1), dueAt: "2026-08-31T23:59:00Z", estimatedMinutes: 45, priority: "urgent" },
+      { ...input.assignments[0], id: id(2), dueAt: "2026-09-03T23:59:00Z", estimatedMinutes: 90, priority: "medium" },
+    ];
+    input.studyWindows = [0, 1, 2, 3].map((day) => ({
+      startsAt: new Date(Date.parse("2026-08-30T16:00:00Z") + day * 86_400_000).toISOString(),
+      endsAt: new Date(Date.parse("2026-08-30T18:00:00Z") + day * 86_400_000).toISOString(),
+    }));
+    const work = generateSchedule(input).blocks.filter((block) => block.kind === "work");
+    expect(work[0].assignmentId).toBe(id(1));
+    expect(new Set(work.filter((block) => block.assignmentId === id(2)).map((block) => block.startsAt.slice(0, 10))).size).toBe(2);
+    expect(schedulesOverlap(work)).toBe(false);
+  });
+
 });

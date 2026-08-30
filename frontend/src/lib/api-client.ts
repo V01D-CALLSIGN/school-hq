@@ -203,6 +203,10 @@ export const api = {
     jsonRequest<CalendarEvent>("/api/calendar/events", "PATCH", body),
   deleteCalendarEvent: (id: string) =>
     jsonRequest<{ id: string }>("/api/calendar/events", "DELETE", { id }),
+  patchPlanBlock: (body: { id: string; startsAt: string; endsAt: string }) =>
+    jsonRequest<{ id: string; startsAt: string; endsAt: string }>("/api/calendar/plan-blocks", "PATCH", body),
+  deletePlanBlock: (id: string) =>
+    jsonRequest<{ id: string }>("/api/calendar/plan-blocks", "DELETE", { id }),
 
   listStudyWindows: (from?: string, to?: string) =>
     apiRequest<StudyWindow[]>(`/api/study-windows?${query({ from, to })}`),

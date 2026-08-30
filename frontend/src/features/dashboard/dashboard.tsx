@@ -438,7 +438,7 @@ function TodayTimeline({
         ) : (
           <div className="mt-4 flex flex-col gap-3 rounded-md border border-dashed border-border bg-card-strong p-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted">
-              Brain-dump your homework, then place each task into today.
+              Brain-dump your homework, then fit each task into your imported Study Blocks.
             </p>
             <Button asChild size="sm">
               <Link href="/planner?today=1">

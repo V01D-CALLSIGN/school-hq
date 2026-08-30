@@ -9,7 +9,10 @@ const parserOutputJsonSchema = zodToJsonSchema(parserOutputSchema, { $refStrateg
 const parserOutputJsonSchemaText = JSON.stringify(parserOutputJsonSchema);
 
 const extractionInstructions = [
-  "Extract assignments only; never invent a deadline or duration.",
+  "Read the entire brain dump before extracting tasks so that headings, project context, and trailing deadline statements apply to the correct tasks.",
+  "Extract assignments only; a sentence such as 'everything is due tomorrow' or 'this project is due next week' is context, not a separate assignment.",
+  "Apply a shared deadline to every relevant extracted task. Preserve a task-specific deadline when it is more explicit than shared context.",
+  "Never invent a deadline. estimatedMinutes is the total effort the scheduler will divide across the user's imported Study Blocks; infer a conservative practical estimate when task context supports it, otherwise return null for visible review.",
   "Return null for unknown values. Preserve ambiguous date language in ambiguousDateText and add a warning.",
   "Classify area as school or extracurricular. Schoolwork may name a course; extracurricular work may name an activityLabel and must not invent or require a course.",
   "Return areaConfidence from 0 to 1. When area is uncertain, default area to school, set areaConfidence below 0.75, include area in missingFields, and add a review warning.",
@@ -35,6 +38,108 @@ const weekdayNumbers: Record<string, number> = {
   sunday: 7,
 };
 
+const naturalDatePattern =
+  /\b(today|tomorrow|tonight|this\s+week(?:end)?|next\s+week|(?:next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i;
+
+function resolveNaturalDeadline(
+  text: string,
+  reference: DateTime,
+): string | null {
+  const dateMatch = text.match(naturalDatePattern);
+  if (!dateMatch) return null;
+  const phrase = dateMatch[1].toLowerCase();
+  let date = reference.startOf("day");
+  if (phrase === "tomorrow") date = date.plus({ days: 1 });
+  else if (phrase.startsWith("this week")) {
+    const daysToFriday = (5 - reference.weekday + 7) % 7;
+    date = date.plus({ days: daysToFriday });
+  } else if (phrase === "next week") {
+    date = reference.startOf("week").plus({ weeks: 1, days: 4 });
+  } else if (phrase !== "today" && phrase !== "tonight") {
+    const weekday = phrase.replace(/^next\s+/, "");
+    const target = weekdayNumbers[weekday];
+    let daysAhead = (target - reference.weekday + 7) % 7;
+    if (daysAhead === 0 || phrase.startsWith("next ")) daysAhead += 7;
+    date = date.plus({ days: daysAhead });
+  }
+  const timeMatch = text.match(
+    /\b(?:at|by)\s+(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/i,
+  );
+  let hour = 23;
+  let minute = 59;
+  if (timeMatch) {
+    hour = Number(timeMatch[1]);
+    minute = Number(timeMatch[2] ?? "0");
+    if (hour < 1 || hour > 12 || minute > 59) return null;
+    if (hour === 12) hour = 0;
+    if (timeMatch[3].toLowerCase().startsWith("p")) hour += 12;
+  }
+  return date.set({ hour, minute, second: 0, millisecond: 0 }).toUTC().toISO();
+}
+
+const contextOnlyPattern =
+  /^(?:everything|all(?:\s+(?:of\s+)?(?:these|the))?\s+(?:tasks?|items?|assignments?)?|(?:this|the)\s+project)\s+(?:(?:is|are)\s+)?due\b/i;
+
+export function applyBrainDumpContext(
+  assignments: ParsedAssignment[],
+  input: BrainDumpParserInput,
+): ParsedAssignment[] {
+  if (!input.referenceTime) return assignments;
+  const reference = DateTime.fromISO(input.referenceTime, {
+    zone: input.timezone,
+  });
+  if (!reference.isValid) return assignments;
+  const globalMatch = input.text.match(
+    /\b(?:everything|all(?:\s+(?:of\s+)?(?:these|the))?\s+(?:tasks?|items?|assignments?)?)\s+(?:is|are)\s+due\s+([^.;\n]+)/i,
+  );
+  const projectMatch = input.text.match(
+    /\b(?:this|the)\s+project\s+(?:is\s+)?due\s+([^.;\n]+)/i,
+  );
+  const sharedDeadline = resolveNaturalDeadline(
+    globalMatch?.[1] ?? projectMatch?.[1] ?? "",
+    reference,
+  );
+  return assignments
+    .filter((assignment) => !contextOnlyPattern.test(assignment.title.trim()))
+    .map((assignment) => {
+      const ownDeadline = assignment.dueAt
+        ? null
+        : resolveNaturalDeadline(
+            `${assignment.ambiguousDateText ?? ""} ${assignment.title}`,
+            reference,
+          );
+      const dueAt = assignment.dueAt ?? ownDeadline ?? sharedDeadline;
+      const estimatedMinutes =
+        assignment.estimatedMinutes ??
+        (assignment.taskType === "project"
+          ? 120
+          : assignment.taskType === "exam"
+            ? 90
+            : assignment.taskType === "reading"
+              ? 30
+              : 45);
+      return {
+        ...assignment,
+        dueAt,
+        ambiguousDateText: dueAt ? null : assignment.ambiguousDateText,
+        estimatedMinutes,
+        missingFields: assignment.missingFields.filter(
+          (field) =>
+            (field !== "dueAt" || !dueAt) &&
+            (field !== "estimatedMinutes" || !estimatedMinutes),
+        ),
+        warnings: [
+          ...assignment.warnings.filter(
+            (warning) => !dueAt || !/date|deadline|timestamp/i.test(warning),
+          ),
+          ...(assignment.estimatedMinutes === null
+            ? [`Estimated ${estimatedMinutes} minutes; review before saving.`]
+            : []),
+        ],
+      };
+    });
+}
+
 export function resolveRelativeAssignments(
   assignments: ParsedAssignment[],
   input: BrainDumpParserInput,
@@ -46,29 +151,7 @@ export function resolveRelativeAssignments(
   if (!reference.isValid) return assignments;
   return assignments.map((assignment) => {
     if (assignment.dueAt || !assignment.ambiguousDateText) return assignment;
-    const dateMatch = assignment.ambiguousDateText.match(
-      /\b(today|tomorrow|tonight|(?:next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i,
-    );
-    const timeMatch = assignment.ambiguousDateText.match(
-      /\b(?:at|by)\s+(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/i,
-    );
-    if (!dateMatch || !timeMatch) return assignment;
-    let date = reference.startOf("day");
-    const phrase = dateMatch[1].toLowerCase().replace(/^next\s+/, "");
-    if (phrase === "tomorrow") date = date.plus({ days: 1 });
-    else if (phrase !== "today" && phrase !== "tonight") {
-      const target = weekdayNumbers[phrase];
-      let daysAhead = (target - reference.weekday + 7) % 7;
-      if (daysAhead === 0) daysAhead = 7;
-      date = date.plus({ days: daysAhead });
-    }
-    let hour = Number(timeMatch[1]);
-    const minute = Number(timeMatch[2] ?? "0");
-    const meridiem = timeMatch[3].toLowerCase().startsWith("p") ? "pm" : "am";
-    if (hour < 1 || hour > 12 || minute > 59) return assignment;
-    if (hour === 12) hour = 0;
-    if (meridiem === "pm") hour += 12;
-    const dueAt = date.set({ hour, minute }).toUTC().toISO();
+    const dueAt = resolveNaturalDeadline(assignment.ambiguousDateText, reference);
     if (!dueAt) return assignment;
     return {
       ...assignment,

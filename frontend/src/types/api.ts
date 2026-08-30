@@ -49,7 +49,7 @@ export type CalendarEvent = {
   id: string; calendarImportId: string; sourceUid: string; recurrenceId: string | null;
   title: string; description: string | null; location: string | null; startsAt: ISODateTime;
   endsAt: ISODateTime; allDay: boolean; classification: CalendarClassification; area: WorkArea;
-  originalTimezone: string | null;
+  originalTimezone: string | null; planBlockId?: string | null; assignmentId?: string | null;
 };
 export type CalendarImportResponse = { import: CalendarImport; events: CalendarEvent[] };
 export type CreateCalendarEventInput = Pick<CalendarEvent,
@@ -77,6 +77,7 @@ export type StudyPlan = {
 };
 export type GeneratePlanInput = {
   rangeStart: ISODateTime; rangeEnd: ISODateTime; timezone: string; area?: WorkArea;
+  assignmentIds?: string[];
 };
 export type UpdatePlanInput = {
   status?: StudyPlan["status"];

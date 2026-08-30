@@ -7,7 +7,7 @@ export const MAX_ICS_BYTES = 1_000_000;
 export const MAX_CALENDAR_EVENTS = 5_000;
 const MAX_RECURRENCE_ITERATIONS = 20_000;
 
-export type NormalizedCalendarEvent = Omit<CalendarEvent, "id" | "calendarImportId">;
+export type NormalizedCalendarEvent = Omit<CalendarEvent, "id" | "calendarImportId" | "planBlockId" | "assignmentId">;
 
 const limited = (value: string | null | undefined, max: number): string | null => value ? value.slice(0, max) : null;
 
