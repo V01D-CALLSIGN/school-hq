@@ -40,6 +40,8 @@ const weekdayNumbers: Record<string, number> = {
 
 const naturalDatePattern =
   /\b(today|tomorrow|tonight|this\s+week(?:end)?|next\s+week|(?:next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i;
+const explicitDateEvidencePattern =
+  /\b(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}|in\s+\d+\s+(?:days?|weeks?))\b/i;
 
 function resolveNaturalDeadline(
   text: string,
@@ -99,6 +101,8 @@ export function applyBrainDumpContext(
     globalMatch?.[1] ?? projectMatch?.[1] ?? "",
     reference,
   );
+  const hasDeadlineEvidence =
+    naturalDatePattern.test(input.text) || explicitDateEvidencePattern.test(input.text);
   return assignments
     .filter((assignment) => !contextOnlyPattern.test(assignment.title.trim()))
     .map((assignment) => {
@@ -108,7 +112,8 @@ export function applyBrainDumpContext(
             `${assignment.ambiguousDateText ?? ""} ${assignment.title}`,
             reference,
           );
-      const dueAt = assignment.dueAt ?? ownDeadline ?? sharedDeadline;
+      const parserDeadline = hasDeadlineEvidence ? assignment.dueAt : null;
+      const dueAt = parserDeadline ?? ownDeadline ?? sharedDeadline;
       const estimatedMinutes =
         assignment.estimatedMinutes ??
         (assignment.taskType === "project"
@@ -123,17 +128,23 @@ export function applyBrainDumpContext(
         dueAt,
         ambiguousDateText: dueAt ? null : assignment.ambiguousDateText,
         estimatedMinutes,
-        missingFields: assignment.missingFields.filter(
-          (field) =>
-            (field !== "dueAt" || !dueAt) &&
-            (field !== "estimatedMinutes" || !estimatedMinutes),
-        ),
+        missingFields: Array.from(new Set([
+          ...assignment.missingFields.filter(
+            (field) =>
+              (field !== "dueAt" || !dueAt) &&
+              (field !== "estimatedMinutes" || !estimatedMinutes),
+          ),
+          ...(!dueAt && assignment.dueAt ? ["dueAt" as const] : []),
+        ])),
         warnings: [
           ...assignment.warnings.filter(
             (warning) => !dueAt || !/date|deadline|timestamp/i.test(warning),
           ),
           ...(assignment.estimatedMinutes === null
             ? [`Estimated ${estimatedMinutes} minutes; review before saving.`]
+            : []),
+          ...(!hasDeadlineEvidence && assignment.dueAt
+            ? ["Removed an ungrounded parser deadline; review the due date."]
             : []),
         ],
       };

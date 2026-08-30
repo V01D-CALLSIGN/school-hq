@@ -66,6 +66,7 @@ vi.mock("@/lib/api-client", () => ({
     })),
   },
 }));
+import { api } from "@/lib/api-client";
 import { Planner } from "@/features/planner/planner";
 describe("Planner", () => {
   beforeEach(() => {
@@ -113,5 +114,23 @@ describe("Planner", () => {
     await user.click(await screen.findByRole("button", { name: /use this plan/i }));
     expect(pushMock).toHaveBeenCalledWith("/calendar");
     expect(sessionStorage.getItem("school-hq-plan-today-v1")).toBeNull();
+  });
+
+  it("does not activate an empty plan and directs the user to import Study Blocks", async () => {
+    window.history.replaceState({}, "", "/planner?today=1");
+    vi.mocked(api.generatePlan).mockResolvedValueOnce({
+      id: "plan-empty", rangeStart: "2026-08-30T17:00:00.000Z",
+      rangeEnd: "2026-09-07T17:00:00.000Z", timezone: "America/Chicago",
+      status: "draft", areaFilter: "combined", blocks: [],
+      unscheduledTasks: [{ assignmentId: "assignment-1", remainingMinutes: 45, reason: "NO_AVAILABILITY" }],
+      createdAt: "2026-08-30T00:00:00.000Z", updatedAt: "2026-08-30T00:00:00.000Z",
+    });
+    const user = userEvent.setup();
+    render(<Planner />);
+    await user.type(screen.getByRole("textbox", { name: /input console/i }), "Physics homework");
+    await user.click(screen.getByRole("button", { name: /parse brain dump/i }));
+    await user.click(await screen.findByRole("button", { name: /create today’s work plan/i }));
+    await user.click(await screen.findByRole("button", { name: /import study blocks first/i }));
+    expect(pushMock).toHaveBeenCalledWith("/calendar");
   });
 });

@@ -89,4 +89,20 @@ describe("mock brain dump parser", () => {
     expect(results).toHaveLength(2);
     expect(results.every((item) => item.dueAt === "2026-09-05T04:59:00.000Z")).toBe(true);
   });
+
+  it("rejects a model deadline when the brain dump contains no date evidence", () => {
+    const [result] = applyBrainDumpContext([{
+      title: "Robotics slides", area: "extracurricular", areaConfidence: 0.9,
+      course: null, activityLabel: "Robotics", dueAt: "2026-08-31T00:00:00.000Z",
+      ambiguousDateText: null, estimatedMinutes: 45, priority: "medium",
+      taskType: "assignment", dependencies: [], notes: null, confidence: 0.7,
+      missingFields: [], warnings: [],
+    }], {
+      text: "Robotics slides 45 minutes", timezone: "America/Chicago",
+      referenceTime: "2026-08-30T21:00:00.000Z",
+    });
+    expect(result.dueAt).toBeNull();
+    expect(result.missingFields).toContain("dueAt");
+    expect(result.warnings).toContain("Removed an ungrounded parser deadline; review the due date.");
+  });
 });

@@ -1,6 +1,7 @@
 "use client";
 import {
   AlertTriangle,
+  CalendarPlus,
   Check,
   ChevronLeft,
   Clock3,
@@ -226,6 +227,7 @@ export function Planner() {
       }),
     [plan, known, mode],
   );
+  const hasWorkBlocks = shownBlocks.some((block) => block.kind === "work");
   const update = (index: number, patch: Partial<ParsedAssignment>) =>
     setDrafts((current) =>
       current.map((item, itemIndex) =>
@@ -695,6 +697,10 @@ export function Planner() {
             <Button
               className="w-full"
               onClick={() => {
+                if (!hasWorkBlocks) {
+                  router.push("/calendar");
+                  return;
+                }
                 setLoading(true);
                 void api.patchPlan(plan.id, {
                   status: "active",
@@ -712,10 +718,14 @@ export function Planner() {
                   .catch((reason: Error) => setError(reason.message))
                   .finally(() => setLoading(false));
               }}
-              disabled={plan.status === "active"}
+              disabled={plan.status === "active" || loading}
             >
-              <Check size={17} />
-              {plan.status === "active" ? "Plan active" : "Use this plan"}
+              {hasWorkBlocks ? <Check size={17} /> : <CalendarPlus size={17} />}
+              {plan.status === "active"
+                ? "Plan active"
+                : hasWorkBlocks
+                  ? "Use this plan"
+                  : "Import Study Blocks first"}
             </Button>
             <Button
               variant="ghost"
