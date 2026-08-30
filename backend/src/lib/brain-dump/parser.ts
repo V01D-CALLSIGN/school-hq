@@ -1,0 +1,291 @@
+import { DateTime } from "luxon";
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import { parsedAssignmentSchema, type ParsedAssignment } from "@/lib/contracts";
+import { HttpError } from "@/lib/server/errors";
+
+const parserOutputSchema = z.object({ assignments: z.array(parsedAssignmentSchema).max(100) });
+const parserOutputJsonSchema = zodToJsonSchema(parserOutputSchema, { $refStrategy: "none" });
+const parserOutputJsonSchemaText = JSON.stringify(parserOutputJsonSchema);
+
+const extractionInstructions = [
+  "Extract assignments only; never invent a deadline or duration.",
+  "Return null for unknown values. Preserve ambiguous date language in ambiguousDateText and add a warning.",
+  "Classify area as school or extracurricular. Schoolwork may name a course; extracurricular work may name an activityLabel and must not invent or require a course.",
+  "Return areaConfidence from 0 to 1. When area is uncertain, default area to school, set areaConfidence below 0.75, include area in missingFields, and add a review warning.",
+  "Resolve explicit dates using the supplied IANA timezone, returning UTC ISO timestamps.",
+  "Use the supplied referenceTime to resolve today, tomorrow, tonight, and named weekdays; never treat those phrases as ambiguous when referenceTime is present.",
+  "This output is reviewed by the user and must not directly create assignments.",
+].join(" ");
+
+type BrainDumpParserInput = {
+  text: string;
+  timezone: string;
+  referenceTime?: string;
+  courseContext?: Array<{ id?: string; name: string }>;
+};
+
+const weekdayNumbers: Record<string, number> = {
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+  sunday: 7,
+};
+
+export function resolveRelativeAssignments(
+  assignments: ParsedAssignment[],
+  input: BrainDumpParserInput,
+): ParsedAssignment[] {
+  if (!input.referenceTime) return assignments;
+  const reference = DateTime.fromISO(input.referenceTime, {
+    zone: input.timezone,
+  });
+  if (!reference.isValid) return assignments;
+  return assignments.map((assignment) => {
+    if (assignment.dueAt || !assignment.ambiguousDateText) return assignment;
+    const dateMatch = assignment.ambiguousDateText.match(
+      /\b(today|tomorrow|tonight|(?:next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i,
+    );
+    const timeMatch = assignment.ambiguousDateText.match(
+      /\b(?:at|by)\s+(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/i,
+    );
+    if (!dateMatch || !timeMatch) return assignment;
+    let date = reference.startOf("day");
+    const phrase = dateMatch[1].toLowerCase().replace(/^next\s+/, "");
+    if (phrase === "tomorrow") date = date.plus({ days: 1 });
+    else if (phrase !== "today" && phrase !== "tonight") {
+      const target = weekdayNumbers[phrase];
+      let daysAhead = (target - reference.weekday + 7) % 7;
+      if (daysAhead === 0) daysAhead = 7;
+      date = date.plus({ days: daysAhead });
+    }
+    let hour = Number(timeMatch[1]);
+    const minute = Number(timeMatch[2] ?? "0");
+    const meridiem = timeMatch[3].toLowerCase().startsWith("p") ? "pm" : "am";
+    if (hour < 1 || hour > 12 || minute > 59) return assignment;
+    if (hour === 12) hour = 0;
+    if (meridiem === "pm") hour += 12;
+    const dueAt = date.set({ hour, minute }).toUTC().toISO();
+    if (!dueAt) return assignment;
+    return {
+      ...assignment,
+      dueAt,
+      ambiguousDateText: null,
+      missingFields: assignment.missingFields.filter(
+        (field) => field !== "dueAt",
+      ),
+      warnings: assignment.warnings.filter(
+        (warning) => !/date|deadline|timestamp/i.test(warning),
+      ),
+    };
+  });
+}
+
+export interface BrainDumpParser {
+  parse(input: BrainDumpParserInput): Promise<ParsedAssignment[]>;
+}
+
+const duePattern = /(?:due\s+)?(\d{4}-\d{2}-\d{2})(?:[ T](\d{1,2}:\d{2}))?/i;
+const durationPattern = /(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m)\b/i;
+const ambiguousPattern = /\b(today|tomorrow|tonight|next\s+(?:mon|tues|wednes|thurs|fri|satur|sun)day|this\s+week(?:end)?|next\s+week)\b/i;
+const extracurricularPattern = /\b(club|team|practice|rehearsal|volunteer|student council|debate|robotics|orchestra|band|theater|theatre|soccer|basketball|football|tennis|swim|yearbook)\b/i;
+
+export class MockBrainDumpParser implements BrainDumpParser {
+  async parse(input: BrainDumpParserInput): Promise<ParsedAssignment[]> {
+    const lines = input.text.split(/\n|;/).map((line) => line.trim()).filter(Boolean);
+    return lines.map((line) => {
+      const dueMatch = line.match(duePattern);
+      const durationMatch = line.match(durationPattern);
+      const ambiguous = line.match(ambiguousPattern)?.[0] ?? null;
+      let dueAt: string | null = null;
+      const warnings: string[] = [];
+      if (dueMatch) {
+        const candidate = DateTime.fromISO(`${dueMatch[1]}T${dueMatch[2] ?? "23:59"}`, { zone: input.timezone });
+        if (candidate.isValid) dueAt = candidate.toUTC().toISO();
+      } else if (ambiguous) {
+        warnings.push(`Ambiguous date phrase preserved: "${ambiguous}"`);
+      }
+      const course = input.courseContext?.find(({ name }) => line.toLowerCase().includes(name.toLowerCase()))?.name ?? null;
+      const activityMatch = line.match(extracurricularPattern);
+      const area = activityMatch && !course ? "extracurricular" as const : "school" as const;
+      const areaConfidence = course || activityMatch ? 0.95 : 0.5;
+      if (areaConfidence < 0.75) warnings.push("Area is uncertain; review school vs extracurricular classification");
+      const estimatedMinutes = durationMatch
+        ? Math.round(Number(durationMatch[1]) * (/^h/i.test(durationMatch[2]) ? 60 : 1))
+        : null;
+      const cleanedTitle = line
+        .replace(duePattern, "").replace(durationPattern, "").replace(/\s{2,}/g, " ").replace(/^[\s,:-]+|[\s,:-]+$/g, "")
+        .slice(0, 240) || "Untitled assignment";
+      const missingFields: ParsedAssignment["missingFields"] = [];
+      if (areaConfidence < 0.75) missingFields.push("area");
+      if (area === "school" && !course) missingFields.push("course");
+      if (!dueAt) missingFields.push("dueAt");
+      if (estimatedMinutes === null) missingFields.push("estimatedMinutes");
+      return {
+        title: cleanedTitle, area, areaConfidence, course: area === "school" ? course : null,
+        activityLabel: area === "extracurricular" ? activityMatch?.[0] ?? null : null,
+        dueAt, ambiguousDateText: ambiguous, estimatedMinutes,
+        priority: /\b(urgent|asap)\b/i.test(line) ? "urgent" : /\bimportant\b/i.test(line) ? "high" : "medium",
+        taskType: /\bexam|test\b/i.test(line) ? "exam" : /\bread/i.test(line) ? "reading" : /\bproject\b/i.test(line) ? "project" : "assignment",
+        dependencies: [], notes: null, confidence: dueAt && estimatedMinutes ? 0.9 : 0.6, missingFields, warnings,
+      };
+    });
+  }
+}
+
+type OllamaOptions = {
+  baseUrl: string;
+  model: string;
+  timeoutMs: number;
+  apiKey?: string;
+  fetchImpl?: typeof fetch;
+};
+
+type OllamaTagsResponse = { models?: Array<{ name?: string; model?: string }> };
+type OllamaChatResponse = { message?: { content?: string } };
+
+export class OllamaBrainDumpParser implements BrainDumpParser {
+  private readonly baseUrl: string;
+  private readonly fetchImpl: typeof fetch;
+
+  constructor(private readonly options: OllamaOptions) {
+    this.baseUrl = options.baseUrl.replace(/\/+$/, "");
+    this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  async parse(input: BrainDumpParserInput): Promise<ParsedAssignment[]> {
+    let lastError: HttpError | undefined;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await this.healthCheck();
+        return await this.generate(input);
+      } catch (error) {
+        const normalized = this.normalizeError(error);
+        lastError = normalized;
+        if (
+          attempt === 1 ||
+          normalized.code === "OLLAMA_MODEL_UNAVAILABLE" ||
+          normalized.code === "PARSER_TIMEOUT"
+        ) throw normalized;
+      }
+    }
+    throw lastError ?? new HttpError(502, "PARSER_UNAVAILABLE", "Assignment parsing is temporarily unavailable");
+  }
+
+  private async healthCheck(): Promise<void> {
+    const { response, payload } = await this.requestJson(`${this.baseUrl}/api/tags`, { method: "GET" }, Math.min(this.options.timeoutMs, 2_000));
+    if (!response.ok) throw new HttpError(503, "OLLAMA_UNAVAILABLE", "The Ollama service is unavailable");
+    const models = (payload as OllamaTagsResponse).models;
+    if (!Array.isArray(models)) throw new HttpError(503, "OLLAMA_UNAVAILABLE", "The Ollama service returned an invalid health response");
+    const available = models.some((model) => model.name === this.options.model || model.model === this.options.model);
+    if (!available) {
+      throw new HttpError(503, "OLLAMA_MODEL_UNAVAILABLE", `Ollama model "${this.options.model}" is not available`);
+    }
+  }
+
+  private async generate(input: BrainDumpParserInput): Promise<ParsedAssignment[]> {
+    const isCloud = Boolean(this.options.apiKey);
+    const { response, payload } = await this.requestJson(`${this.baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: this.options.model,
+        stream: false,
+        // Ollama Cloud currently supports JSON mode but not schema-enforced
+        // structured output. Validation still happens locally with Zod.
+        format: isCloud ? "json" : parserOutputJsonSchema,
+        think: this.options.model.startsWith("gpt-oss") ? "low" : false,
+        options: { temperature: 0 },
+        messages: [
+          {
+            role: "system",
+            content: isCloud
+              ? `${extractionInstructions} Return only JSON matching this schema: ${parserOutputJsonSchemaText}`
+              : extractionInstructions,
+          },
+          { role: "user", content: JSON.stringify(input) },
+        ],
+      }),
+    }, this.options.timeoutMs);
+    if (response.status === 404) throw new HttpError(503, "OLLAMA_MODEL_UNAVAILABLE", `Ollama model "${this.options.model}" is unavailable`);
+    if (!response.ok) throw new HttpError(502, "PARSER_UNAVAILABLE", "Ollama could not parse the assignment text");
+    const content = (payload as OllamaChatResponse).message?.content;
+    if (!content) throw new HttpError(502, "PARSER_INVALID_RESPONSE", "Ollama returned no usable structured output");
+    try {
+      return parserOutputSchema.parse(JSON.parse(content)).assignments;
+    } catch {
+      throw new HttpError(502, "PARSER_INVALID_RESPONSE", "Ollama returned malformed structured output");
+    }
+  }
+
+  private async requestJson(url: string, init: RequestInit, timeoutMs: number): Promise<{ response: Response; payload: unknown }> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const headers = new Headers(init.headers);
+      if (this.options.apiKey) headers.set("Authorization", `Bearer ${this.options.apiKey}`);
+      const response = await this.fetchImpl(url, { ...init, headers, signal: controller.signal });
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new HttpError(502, "PARSER_INVALID_RESPONSE", "Ollama returned an unreadable response");
+      }
+      return { response, payload };
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      if ((error instanceof DOMException && error.name === "AbortError") || (error instanceof Error && error.name === "AbortError")) {
+        throw new HttpError(504, "PARSER_TIMEOUT", "Ollama assignment parsing timed out");
+      }
+      throw new HttpError(503, "OLLAMA_UNAVAILABLE", "The Ollama service is unavailable");
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private normalizeError(error: unknown): HttpError {
+    if (error instanceof HttpError) return error;
+    console.error("Unexpected Ollama parser error", error);
+    return new HttpError(502, "PARSER_UNAVAILABLE", "Assignment parsing is temporarily unavailable");
+  }
+}
+
+export class OpenAIBrainDumpParser implements BrainDumpParser {
+  constructor(private readonly options: { apiKey: string; model: string; timeoutMs: number }) {}
+
+  async parse(input: BrainDumpParserInput): Promise<ParsedAssignment[]> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
+    try {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.options.apiKey}`, "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: this.options.model,
+          instructions: extractionInstructions,
+          input: JSON.stringify(input),
+          text: { format: { type: "json_schema", name: "brain_dump_assignments", strict: true, schema: parserOutputJsonSchema } },
+        }),
+      });
+      if (!response.ok) {
+        console.error("OpenAI parser failure", response.status);
+        throw new HttpError(502, "PARSER_UNAVAILABLE", "Assignment parsing is temporarily unavailable");
+      }
+      const payload = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ type?: string; text?: string }> }> };
+      const outputText = payload.output_text ?? payload.output?.flatMap((item) => item.content ?? []).find((item) => item.type === "output_text")?.text;
+      if (!outputText) throw new HttpError(502, "PARSER_INVALID_RESPONSE", "The parser returned no usable result");
+      return parserOutputSchema.parse(JSON.parse(outputText)).assignments;
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      if (error instanceof DOMException && error.name === "AbortError") throw new HttpError(504, "PARSER_TIMEOUT", "Assignment parsing timed out");
+      console.error("OpenAI parser error", error);
+      throw new HttpError(502, "PARSER_UNAVAILABLE", "Assignment parsing is temporarily unavailable");
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}

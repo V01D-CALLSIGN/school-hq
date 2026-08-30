@@ -1,0 +1,2 @@
+-- Intentionally empty. A normal `supabase db reset` must not create application records.
+-- Development-only sample data is opt-in via `supabase/seeds/demo.sql`.
