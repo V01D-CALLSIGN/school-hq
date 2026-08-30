@@ -1,0 +1,15 @@
+{
+  "name": "school-hq",
+  "private": true,
+  "scripts": {
+    "test": "npm run test:frontend && npm run test:backend",
+    "test:frontend": "npm --prefix frontend test -- --run",
+    "test:backend": "npm --prefix backend test -- --run",
+    "typecheck": "npm --prefix frontend run typecheck && npm --prefix backend run typecheck",
+    "lint": "npm --prefix frontend run lint && npm --prefix backend run lint",
+    "build": "npm --prefix frontend run build && npm --prefix backend run build",
+    "build:ios": "npm --prefix frontend run build:ios",
+    "sync:ios": "cd frontend && npx cap sync ios"
+  }
+}
+
