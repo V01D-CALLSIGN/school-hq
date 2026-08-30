@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { MockBrainDumpParser } from "@/lib/brain-dump/parser";
+import {
+  MockBrainDumpParser,
+  resolveRelativeAssignments,
+} from "@/lib/brain-dump/parser";
 
 describe("mock brain dump parser", () => {
   const parser = new MockBrainDumpParser();
@@ -29,5 +32,38 @@ describe("mock brain dump parser", () => {
     expect(result.ambiguousDateText).toBe("next week");
     expect(result.missingFields).toContain("dueAt");
     expect(result.warnings[0]).toContain("next week");
+  });
+
+  it("resolves a relative deadline against the supplied time and timezone", () => {
+    const [result] = resolveRelativeAssignments(
+      [
+        {
+          title: "Calculus worksheet",
+          area: "school",
+          areaConfidence: 0.9,
+          course: "Calculus",
+          activityLabel: null,
+          dueAt: null,
+          ambiguousDateText: "due tomorrow at 8:00 AM",
+          estimatedMinutes: 45,
+          priority: "medium",
+          taskType: "assignment",
+          dependencies: [],
+          notes: null,
+          confidence: 0.7,
+          missingFields: ["dueAt"],
+          warnings: ["Ambiguous due date"],
+        },
+      ],
+      {
+        text: "Calculus worksheet due tomorrow at 8:00 AM",
+        timezone: "America/Chicago",
+        referenceTime: "2026-08-30T21:00:00.000Z",
+      },
+    );
+    expect(result.dueAt).toBe("2026-08-31T13:00:00.000Z");
+    expect(result.ambiguousDateText).toBeNull();
+    expect(result.missingFields).not.toContain("dueAt");
+    expect(result.warnings).toEqual([]);
   });
 });

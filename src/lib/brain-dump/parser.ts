@@ -14,11 +14,78 @@ const extractionInstructions = [
   "Classify area as school or extracurricular. Schoolwork may name a course; extracurricular work may name an activityLabel and must not invent or require a course.",
   "Return areaConfidence from 0 to 1. When area is uncertain, default area to school, set areaConfidence below 0.75, include area in missingFields, and add a review warning.",
   "Resolve explicit dates using the supplied IANA timezone, returning UTC ISO timestamps.",
+  "Use the supplied referenceTime to resolve today, tomorrow, tonight, and named weekdays; never treat those phrases as ambiguous when referenceTime is present.",
   "This output is reviewed by the user and must not directly create assignments.",
 ].join(" ");
 
+type BrainDumpParserInput = {
+  text: string;
+  timezone: string;
+  referenceTime?: string;
+  courseContext?: Array<{ id?: string; name: string }>;
+};
+
+const weekdayNumbers: Record<string, number> = {
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+  sunday: 7,
+};
+
+export function resolveRelativeAssignments(
+  assignments: ParsedAssignment[],
+  input: BrainDumpParserInput,
+): ParsedAssignment[] {
+  if (!input.referenceTime) return assignments;
+  const reference = DateTime.fromISO(input.referenceTime, {
+    zone: input.timezone,
+  });
+  if (!reference.isValid) return assignments;
+  return assignments.map((assignment) => {
+    if (assignment.dueAt || !assignment.ambiguousDateText) return assignment;
+    const dateMatch = assignment.ambiguousDateText.match(
+      /\b(today|tomorrow|tonight|(?:next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i,
+    );
+    const timeMatch = assignment.ambiguousDateText.match(
+      /\b(?:at|by)\s+(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/i,
+    );
+    if (!dateMatch || !timeMatch) return assignment;
+    let date = reference.startOf("day");
+    const phrase = dateMatch[1].toLowerCase().replace(/^next\s+/, "");
+    if (phrase === "tomorrow") date = date.plus({ days: 1 });
+    else if (phrase !== "today" && phrase !== "tonight") {
+      const target = weekdayNumbers[phrase];
+      let daysAhead = (target - reference.weekday + 7) % 7;
+      if (daysAhead === 0) daysAhead = 7;
+      date = date.plus({ days: daysAhead });
+    }
+    let hour = Number(timeMatch[1]);
+    const minute = Number(timeMatch[2] ?? "0");
+    const meridiem = timeMatch[3].toLowerCase().startsWith("p") ? "pm" : "am";
+    if (hour < 1 || hour > 12 || minute > 59) return assignment;
+    if (hour === 12) hour = 0;
+    if (meridiem === "pm") hour += 12;
+    const dueAt = date.set({ hour, minute }).toUTC().toISO();
+    if (!dueAt) return assignment;
+    return {
+      ...assignment,
+      dueAt,
+      ambiguousDateText: null,
+      missingFields: assignment.missingFields.filter(
+        (field) => field !== "dueAt",
+      ),
+      warnings: assignment.warnings.filter(
+        (warning) => !/date|deadline|timestamp/i.test(warning),
+      ),
+    };
+  });
+}
+
 export interface BrainDumpParser {
-  parse(input: { text: string; timezone: string; courseContext?: Array<{ name: string }> }): Promise<ParsedAssignment[]>;
+  parse(input: BrainDumpParserInput): Promise<ParsedAssignment[]>;
 }
 
 const duePattern = /(?:due\s+)?(\d{4}-\d{2}-\d{2})(?:[ T](\d{1,2}:\d{2}))?/i;
@@ -27,7 +94,7 @@ const ambiguousPattern = /\b(today|tomorrow|tonight|next\s+(?:mon|tues|wednes|th
 const extracurricularPattern = /\b(club|team|practice|rehearsal|volunteer|student council|debate|robotics|orchestra|band|theater|theatre|soccer|basketball|football|tennis|swim|yearbook)\b/i;
 
 export class MockBrainDumpParser implements BrainDumpParser {
-  async parse(input: { text: string; timezone: string; courseContext?: Array<{ name: string }> }): Promise<ParsedAssignment[]> {
+  async parse(input: BrainDumpParserInput): Promise<ParsedAssignment[]> {
     const lines = input.text.split(/\n|;/).map((line) => line.trim()).filter(Boolean);
     return lines.map((line) => {
       const dueMatch = line.match(duePattern);
@@ -89,7 +156,7 @@ export class OllamaBrainDumpParser implements BrainDumpParser {
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
-  async parse(input: { text: string; timezone: string; courseContext?: Array<{ name: string }> }): Promise<ParsedAssignment[]> {
+  async parse(input: BrainDumpParserInput): Promise<ParsedAssignment[]> {
     let lastError: HttpError | undefined;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
@@ -119,7 +186,7 @@ export class OllamaBrainDumpParser implements BrainDumpParser {
     }
   }
 
-  private async generate(input: { text: string; timezone: string; courseContext?: Array<{ name: string }> }): Promise<ParsedAssignment[]> {
+  private async generate(input: BrainDumpParserInput): Promise<ParsedAssignment[]> {
     const isCloud = Boolean(this.options.apiKey);
     const { response, payload } = await this.requestJson(`${this.baseUrl}/api/chat`, {
       method: "POST",
@@ -189,7 +256,7 @@ export class OllamaBrainDumpParser implements BrainDumpParser {
 export class OpenAIBrainDumpParser implements BrainDumpParser {
   constructor(private readonly options: { apiKey: string; model: string; timeoutMs: number }) {}
 
-  async parse(input: { text: string; timezone: string; courseContext?: Array<{ name: string }> }): Promise<ParsedAssignment[]> {
+  async parse(input: BrainDumpParserInput): Promise<ParsedAssignment[]> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
     try {
