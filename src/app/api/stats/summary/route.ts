@@ -21,8 +21,8 @@ export async function GET(request: Request): Promise<Response> {
     const weekEnd = now.endOf("week").toUTC().toISO();
     const [assignments, sessions, blocks] = await Promise.all([
       supabase.from("assignments").select("area,status,due_at"),
-      supabase.from("focus_sessions").select("started_at,completed_at,accumulated_pause_seconds,assignment:assignments(area),plan_block:plan_blocks(assignment:assignments(area))").eq("status", "completed").gte("started_at", weekStart).lte("started_at", weekEnd),
-      supabase.from("plan_blocks").select("starts_at,ends_at,assignment:assignments(area)").eq("kind", "work").gte("starts_at", weekStart).lte("starts_at", weekEnd),
+      supabase.from("focus_sessions").select("started_at,completed_at,accumulated_pause_seconds,assignment:assignments!sessions_assignment_owner_fk(area),plan_block:plan_blocks!sessions_block_owner_fk(assignment:assignments!blocks_assignment_owner_fk(area))").eq("status", "completed").gte("started_at", weekStart).lte("started_at", weekEnd),
+      supabase.from("plan_blocks").select("starts_at,ends_at,assignment:assignments!blocks_assignment_owner_fk(area)").eq("kind", "work").gte("starts_at", weekStart).lte("starts_at", weekEnd),
     ]);
     const assignmentRows = camelize<AssignmentStatRow[]>(assertDb(assignments));
     const sessionRows = (assertDb(sessions) as Array<Record<string, unknown>>).map((row) => ({

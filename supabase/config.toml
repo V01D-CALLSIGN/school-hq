@@ -18,6 +18,7 @@ sql_paths = ["./seed.sql"]
 enabled = true
 site_url = "http://localhost:3000"
 additional_redirect_urls = ["http://localhost:3000/**", "schoolhq://auth/callback"]
+enable_anonymous_sign_ins = true
 
 [auth.mfa.totp]
 enroll_enabled = true
