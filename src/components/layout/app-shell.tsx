@@ -194,9 +194,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             size="sm"
             className="ml-auto text-accent"
           >
-            <Link href="/planner">
+            <Link href="/planner?today=1">
               <Sparkles size={15} />
-              Plan command
+              Plan today
             </Link>
           </Button>
         </header>

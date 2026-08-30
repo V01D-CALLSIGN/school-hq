@@ -141,9 +141,9 @@ export function Dashboard() {
           <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
             <AreaFilterControl value={area} onChange={setArea} />
             <Button asChild className="corner-cut min-w-44">
-              <Link href="/planner">
+              <Link href="/planner?today=1">
                 <Sparkles size={17} />
-                Plan command <ArrowRight size={15} />
+                Plan today <ArrowRight size={15} />
               </Link>
             </Button>
           </div>

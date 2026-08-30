@@ -1,8 +1,10 @@
 "use client";
 import {
   CalendarPlus,
+  Check,
   ChevronLeft,
   ChevronRight,
+  Clock3,
   FileUp,
   LoaderCircle,
   Trash2,
@@ -28,11 +30,43 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
+import {
+  fromDateTimeLocalValue,
+  toDateTimeLocalValue,
+} from "@/lib/date-time";
 import type {
+  Assignment,
   CalendarClassification,
   CalendarEvent,
   WorkArea,
 } from "@/types/api";
+
+type TodayScheduleDraft = {
+  assignment: Assignment;
+  startsAt: string;
+};
+
+const pendingTodayKey = "school-hq-plan-today-v1";
+
+function readPendingTodaySchedule(): TodayScheduleDraft[] {
+  if (typeof window === "undefined") return [];
+  const saved = sessionStorage.getItem(pendingTodayKey);
+  if (!saved) return [];
+  try {
+    const assignments = JSON.parse(saved) as Assignment[];
+    const cursor = new Date();
+    cursor.setSeconds(0, 0);
+    cursor.setMinutes(Math.ceil(cursor.getMinutes() / 30) * 30);
+    return assignments.map((assignment) => {
+      const startsAt = toDateTimeLocalValue(cursor);
+      cursor.setMinutes(cursor.getMinutes() + assignment.estimatedMinutes);
+      return { assignment, startsAt };
+    });
+  } catch {
+    sessionStorage.removeItem(pendingTodayKey);
+    return [];
+  }
+}
 
 const startOfWeek = (date: Date) => {
   const copy = new Date(date);
@@ -50,9 +84,23 @@ const visual = (event: CalendarEvent) =>
         ? "border-amber-300/45 bg-amber-300/10 text-amber-100"
         : "border-cyan-400/45 bg-cyan-400/10 text-cyan-100";
 export function CalendarView() {
+  const todayDate = toDateTimeLocalValue(new Date()).slice(0, 10);
   const [week, setWeek] = useState(() => startOfWeek(new Date()));
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [selected, setSelected] = useState(4);
+  const [selected, setSelected] = useState(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.max(
+      0,
+      Math.min(
+        6,
+        Math.round((today.getTime() - startOfWeek(today).getTime()) / 86400000),
+      ),
+    );
+  });
+  const [todaySchedule, setTodaySchedule] = useState(
+    readPendingTodaySchedule,
+  );
   const [area, setArea] = useAreaFilter();
   const [uploadOpen, setUploadOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
@@ -133,6 +181,53 @@ export function CalendarView() {
       setLoading(false);
     }
   }
+  async function scheduleToday() {
+    if (!todaySchedule.length) return;
+    setLoading(true);
+    const results = await Promise.allSettled(
+      todaySchedule.map(({ assignment, startsAt }) => {
+        const start = new Date(fromDateTimeLocalValue(startsAt));
+        const end = new Date(
+          start.getTime() + assignment.estimatedMinutes * 60_000,
+        );
+        return api.createCalendarEvent({
+          title: assignment.title,
+          description: `Scheduled School HQ task ${assignment.id}`,
+          location: null,
+          startsAt: start.toISOString(),
+          endsAt: end.toISOString(),
+          allDay: false,
+          classification: "busy",
+          area: resolveArea(assignment),
+          originalTimezone: timezone,
+        });
+      }),
+    );
+    const created = results.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value] : [],
+    );
+    const failed = todaySchedule.filter(
+      (_, index) => results[index].status === "rejected",
+    );
+    setEvents((current) => [...current, ...created]);
+    setTodaySchedule(failed);
+    if (failed.length) {
+      sessionStorage.setItem(
+        pendingTodayKey,
+        JSON.stringify(failed.map(({ assignment }) => assignment)),
+      );
+      toast.error(
+        `${failed.length} task${failed.length === 1 ? "" : "s"} could not be scheduled`,
+      );
+    } else {
+      sessionStorage.removeItem(pendingTodayKey);
+      window.history.replaceState({}, "", "/calendar");
+      toast.success(
+        `${created.length} task${created.length === 1 ? "" : "s"} scheduled for today`,
+      );
+    }
+    setLoading(false);
+  }
   async function removeEvent(event: CalendarEvent) {
     const previous = events;
     setEvents((current) => current.filter((item) => item.id !== event.id));
@@ -163,6 +258,99 @@ export function CalendarView() {
           </div>
         }
       />
+      {todaySchedule.length > 0 && (
+        <Card className="corner-cut border-accent/40">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex items-start gap-3">
+              <div className="grid size-9 shrink-0 place-items-center rounded-md bg-accent/10 text-accent">
+                <Clock3 size={18} />
+              </div>
+              <div>
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[.16em] text-accent">
+                  Plan today
+                </p>
+                <h2 className="mt-1 text-xl font-bold">Place each task.</h2>
+                <p className="mt-1 text-sm text-muted">
+                  Choose when you will start. The block length uses each task’s
+                  estimate.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 space-y-3">
+              {todaySchedule.map((draft, index) => {
+                const startTime = Date.parse(draft.startsAt);
+                const endTime = Number.isNaN(startTime)
+                  ? null
+                  : new Date(
+                      startTime +
+                        draft.assignment.estimatedMinutes * 60_000,
+                    );
+                return (
+                  <div
+                    key={draft.assignment.id}
+                    className="grid gap-3 rounded-md border border-border bg-card-strong p-3 sm:grid-cols-[1fr_220px] sm:items-center"
+                  >
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold">{draft.assignment.title}</p>
+                        <AreaBadge area={resolveArea(draft.assignment)} />
+                      </div>
+                      <p className="mt-1 font-mono text-[10px] text-muted">
+                        {draft.assignment.estimatedMinutes}m block · ends {" "}
+                        {endTime
+                          ? endTime.toLocaleTimeString([], {
+                              hour: "numeric",
+                              minute: "2-digit",
+                            })
+                          : "—"}
+                      </p>
+                    </div>
+                    <label className="text-xs font-semibold text-muted">
+                      Starts
+                      <Input
+                        type="datetime-local"
+                        className="mt-1.5"
+                        min={`${todayDate}T00:00`}
+                        max={`${todayDate}T23:59`}
+                        value={draft.startsAt}
+                        onChange={(event) =>
+                          setTodaySchedule((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, startsAt: event.target.value }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+            <Button
+              className="mt-5 w-full sm:w-auto"
+              disabled={
+                loading ||
+                todaySchedule.some(
+                  ({ startsAt }) =>
+                    !startsAt ||
+                    Number.isNaN(Date.parse(startsAt)) ||
+                    !startsAt.startsWith(`${todayDate}T`),
+                )
+              }
+              onClick={() => void scheduleToday()}
+            >
+              {loading ? (
+                <LoaderCircle className="animate-spin" size={16} />
+              ) : (
+                <Check size={16} />
+              )}
+              Add to today’s calendar
+            </Button>
+          </CardContent>
+        </Card>
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <Button

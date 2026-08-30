@@ -12,7 +12,8 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   AreaBadge,
   AreaFilterControl,
@@ -26,6 +27,10 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api-client";
+import {
+  fromDateTimeLocalValue,
+  toDateTimeLocalValue,
+} from "@/lib/date-time";
 import type {
   Assignment,
   Course,
@@ -34,6 +39,10 @@ import type {
   WorkArea,
 } from "@/types/api";
 type Stage = "dump" | "review" | "timeline";
+const subscribeToLocation = () => () => {};
+const isPlanTodayRoute = () =>
+  new URLSearchParams(window.location.search).get("today") === "1";
+const dateWarningPattern = /date|deadline|timestamp/i;
 function readPendingReview(): {
   text: string;
   drafts: ParsedAssignment[];
@@ -56,6 +65,12 @@ const reasonLabel = {
   DEPENDENCY_UNAVAILABLE: "Blocked by a dependency",
 } as const;
 export function Planner() {
+  const router = useRouter();
+  const planToday = useSyncExternalStore(
+    subscribeToLocation,
+    isPlanTodayRoute,
+    () => false,
+  );
   const [pending] = useState(readPendingReview);
   const [stage, setStage] = useState<Stage>(pending ? "review" : "dump");
   const [text, setText] = useState(() => pending?.text ?? "");
@@ -156,6 +171,14 @@ export function Planner() {
       }
       setKnown((current) => [...confirmed, ...current]);
       if (stage === "review") setDrafts([]);
+      if (planToday) {
+        sessionStorage.setItem(
+          "school-hq-plan-today-v1",
+          JSON.stringify(confirmed),
+        );
+        router.push("/calendar?plan=today");
+        return;
+      }
       setPlan(
         await api.generatePlan({
           ...range(),
@@ -206,7 +229,8 @@ export function Planner() {
         }
       />
       <div className="flex items-center gap-2" aria-label="Planner progress">
-        {["Brain dump", "Review", "Timeline"].map((label, index) => {
+        {["Brain dump", "Review", planToday ? "Calendar" : "Timeline"].map(
+          (label, index) => {
           const current = ["dump", "review", "timeline"].indexOf(stage);
           return (
             <div key={label} className="flex flex-1 items-center gap-2">
@@ -227,7 +251,8 @@ export function Planner() {
               )}
             </div>
           );
-        })}
+          },
+        )}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -357,14 +382,35 @@ export function Planner() {
                   >
                     <Input
                       type="datetime-local"
-                      value={draft.dueAt?.slice(0, 16) ?? ""}
-                      onChange={(event) =>
-                        update(index, {
-                          dueAt: event.target.value
-                            ? new Date(event.target.value).toISOString()
-                            : null,
-                        })
+                      value={
+                        draft.dueAt
+                          ? toDateTimeLocalValue(draft.dueAt)
+                          : ""
                       }
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        update(index, {
+                          dueAt: value
+                            ? fromDateTimeLocalValue(value)
+                            : null,
+                          ambiguousDateText: value
+                            ? null
+                            : draft.ambiguousDateText,
+                          missingFields: value
+                            ? draft.missingFields.filter(
+                                (field) => field !== "dueAt",
+                              )
+                            : Array.from(
+                                new Set([...draft.missingFields, "dueAt"]),
+                              ),
+                          warnings: value
+                            ? draft.warnings.filter(
+                                (warning) =>
+                                  !dateWarningPattern.test(warning),
+                              )
+                            : draft.warnings,
+                        });
+                      }}
                     />
                   </Field>
                   <Field
@@ -447,7 +493,9 @@ export function Planner() {
               ) : (
                 <Sparkles size={17} />
               )}
-              Confirm and generate plan
+              {planToday
+                ? "Continue to today’s calendar"
+                : "Confirm and generate plan"}
             </Button>
           </div>
         </div>
