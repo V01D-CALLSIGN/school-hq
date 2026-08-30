@@ -1,11 +1,12 @@
 "use client";
 import { ArrowRight, Check, LoaderCircle } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useState, useSyncExternalStore } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import {
   getSupabaseBrowserClient,
   getAuthRedirectUrl,
+  isNativeDevAuthEnabled,
   isSupabaseConfigured,
 } from "@/lib/supabase/client";
 export function LoginForm() {
@@ -13,6 +14,26 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
+  const nativeDevAuth = useSyncExternalStore(
+    () => () => {},
+    isNativeDevAuthEnabled,
+    () => false,
+  );
+
+  async function enterDevelopmentMode() {
+    setLoading(true);
+    setError("");
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      setError("Supabase is not configured for this build.");
+      setLoading(false);
+      return;
+    }
+    const { error: authError } = await supabase.auth.signInAnonymously();
+    setLoading(false);
+    if (authError) setError(authError.message);
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setLoading(true);
@@ -66,7 +87,39 @@ export function LoginForm() {
               SCHOOL HQ
             </span>
           </div>
-          {sent ? (
+          {nativeDevAuth ? (
+            <div className="surface corner-cut p-7">
+              <p className="font-mono text-xs font-semibold uppercase tracking-[.18em] text-accent">
+                Native development build
+              </p>
+              <h1 className="mt-3 text-3xl font-bold tracking-tight">
+                Enter School HQ.
+              </h1>
+              <p className="mt-3 text-sm leading-6 text-muted">
+                No email or password is needed. This creates a private temporary
+                Supabase account so your data still persists securely.
+              </p>
+              {error && (
+                <p role="alert" className="mt-5 text-sm text-danger">
+                  {error}
+                </p>
+              )}
+              <Button
+                type="button"
+                className="mt-7 w-full"
+                disabled={loading || !isSupabaseConfigured()}
+                onClick={enterDevelopmentMode}
+              >
+                {loading ? (
+                  <LoaderCircle className="animate-spin" size={17} />
+                ) : (
+                  <>
+                    Continue <ArrowRight size={17} />
+                  </>
+                )}
+              </Button>
+            </div>
+          ) : sent ? (
             <div className="surface corner-cut p-7 text-center">
               <div className="mx-auto grid size-12 place-items-center rounded-full bg-success/10 text-success">
                 <Check />

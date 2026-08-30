@@ -7,6 +7,12 @@ export function isNativeApp() {
   return typeof window !== "undefined" && Capacitor.isNativePlatform();
 }
 
+export function isNativeDevAuthEnabled() {
+  return (
+    process.env.NEXT_PUBLIC_ENABLE_NATIVE_DEV_AUTH === "true" && isNativeApp()
+  );
+}
+
 export function getAuthRedirectUrl() {
   return isNativeApp() ? NATIVE_AUTH_CALLBACK : `${window.location.origin}/`;
 }
