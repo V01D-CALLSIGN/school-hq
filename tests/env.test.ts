@@ -23,4 +23,8 @@ describe("parser provider environment", () => {
     expect(getServerEnv({ ...required, BRAIN_DUMP_PARSER: "ollama" }).OPENAI_API_KEY).toBeUndefined();
     expect(getServerEnv({ ...required, BRAIN_DUMP_PARSER: "openai", OPENAI_API_KEY: "optional-key" }).BRAIN_DUMP_PARSER).toBe("openai");
   });
+
+  it("accepts an Ollama Cloud API key as a server-only secret", () => {
+    expect(getServerEnv({ ...required, OLLAMA_API_KEY: "cloud-secret" }).OLLAMA_API_KEY).toBe("cloud-secret");
+  });
 });

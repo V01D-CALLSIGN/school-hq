@@ -72,6 +72,7 @@ type OllamaOptions = {
   baseUrl: string;
   model: string;
   timeoutMs: number;
+  apiKey?: string;
   fetchImpl?: typeof fetch;
 };
 
@@ -104,12 +105,12 @@ export class OllamaBrainDumpParser implements BrainDumpParser {
 
   private async healthCheck(): Promise<void> {
     const { response, payload } = await this.requestJson(`${this.baseUrl}/api/tags`, { method: "GET" }, Math.min(this.options.timeoutMs, 2_000));
-    if (!response.ok) throw new HttpError(503, "OLLAMA_UNAVAILABLE", "The local Ollama server is unavailable");
+    if (!response.ok) throw new HttpError(503, "OLLAMA_UNAVAILABLE", "The Ollama service is unavailable");
     const models = (payload as OllamaTagsResponse).models;
-    if (!Array.isArray(models)) throw new HttpError(503, "OLLAMA_UNAVAILABLE", "The local Ollama server returned an invalid health response");
+    if (!Array.isArray(models)) throw new HttpError(503, "OLLAMA_UNAVAILABLE", "The Ollama service returned an invalid health response");
     const available = models.some((model) => model.name === this.options.model || model.model === this.options.model);
     if (!available) {
-      throw new HttpError(503, "OLLAMA_MODEL_UNAVAILABLE", `Ollama model "${this.options.model}" is not installed`);
+      throw new HttpError(503, "OLLAMA_MODEL_UNAVAILABLE", `Ollama model "${this.options.model}" is not available`);
     }
   }
 
@@ -143,7 +144,9 @@ export class OllamaBrainDumpParser implements BrainDumpParser {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await this.fetchImpl(url, { ...init, signal: controller.signal });
+      const headers = new Headers(init.headers);
+      if (this.options.apiKey) headers.set("Authorization", `Bearer ${this.options.apiKey}`);
+      const response = await this.fetchImpl(url, { ...init, headers, signal: controller.signal });
       let payload: unknown;
       try {
         payload = await response.json();
@@ -156,7 +159,7 @@ export class OllamaBrainDumpParser implements BrainDumpParser {
       if ((error instanceof DOMException && error.name === "AbortError") || (error instanceof Error && error.name === "AbortError")) {
         throw new HttpError(504, "PARSER_TIMEOUT", "Ollama assignment parsing timed out");
       }
-      throw new HttpError(503, "OLLAMA_UNAVAILABLE", "The local Ollama server is unavailable");
+      throw new HttpError(503, "OLLAMA_UNAVAILABLE", "The Ollama service is unavailable");
     } finally {
       clearTimeout(timeout);
     }

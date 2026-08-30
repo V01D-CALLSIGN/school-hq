@@ -22,6 +22,11 @@ const parserWith = (fetchMock: ReturnType<typeof vi.fn>, timeoutMs = 100) => new
   fetchImpl: fetchMock as unknown as typeof fetch,
 });
 
+const cloudParserWith = (fetchMock: ReturnType<typeof vi.fn>) => new OllamaBrainDumpParser({
+  baseUrl: "https://ollama.com", model: "gpt-oss:20b", timeoutMs: 100,
+  apiKey: "cloud-secret", fetchImpl: fetchMock as unknown as typeof fetch,
+});
+
 describe("Ollama brain dump parser", () => {
   it("uses native structured output and returns validated assignments", async () => {
     const fetchMock = vi.fn()
@@ -36,10 +41,20 @@ describe("Ollama brain dump parser", () => {
     expect(body.format).toMatchObject({ type: "object", properties: { assignments: expect.any(Object) } });
   });
 
+  it("authenticates both Ollama Cloud health and chat requests", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ models: [{ name: "gpt-oss:20b" }] }))
+      .mockResolvedValueOnce(chatResponse());
+    await expect(cloudParserWith(fetchMock).parse(input)).resolves.toEqual(structuredOutput.assignments);
+    for (const [, init] of fetchMock.mock.calls as Array<[string, RequestInit]>) {
+      expect(new Headers(init.headers).get("Authorization")).toBe("Bearer cloud-secret");
+    }
+  });
+
   it("returns a clear server error after one connection retry", async () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError("connection refused"));
     await expect(parserWith(fetchMock).parse(input)).rejects.toMatchObject({
-      status: 503, code: "OLLAMA_UNAVAILABLE", message: "The local Ollama server is unavailable",
+      status: 503, code: "OLLAMA_UNAVAILABLE", message: "The Ollama service is unavailable",
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
@@ -47,7 +62,7 @@ describe("Ollama brain dump parser", () => {
   it("returns a clear missing-model error without a pointless retry", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ models: [{ name: "another-model:latest" }] }));
     await expect(parserWith(fetchMock).parse(input)).rejects.toMatchObject({
-      status: 503, code: "OLLAMA_MODEL_UNAVAILABLE", message: "Ollama model \"qwen3.5:4b\" is not installed",
+      status: 503, code: "OLLAMA_MODEL_UNAVAILABLE", message: "Ollama model \"qwen3.5:4b\" is not available",
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

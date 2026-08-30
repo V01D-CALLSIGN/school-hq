@@ -17,10 +17,22 @@ export async function POST(request: Request): Promise<Response> {
     if (env.BRAIN_DUMP_PARSER === "openai" && !env.OPENAI_API_KEY) {
       throw new HttpError(503, "PARSER_NOT_CONFIGURED", "Assignment parsing is not configured");
     }
+    if (
+      env.BRAIN_DUMP_PARSER === "ollama" &&
+      new URL(env.OLLAMA_BASE_URL).hostname === "ollama.com" &&
+      !env.OLLAMA_API_KEY
+    ) {
+      throw new HttpError(503, "PARSER_NOT_CONFIGURED", "Assignment parsing is not configured");
+    }
     const parser = env.BRAIN_DUMP_PARSER === "openai"
       ? new OpenAIBrainDumpParser({ apiKey: env.OPENAI_API_KEY!, model: env.OPENAI_MODEL, timeoutMs: env.BRAIN_DUMP_TIMEOUT_MS })
       : env.BRAIN_DUMP_PARSER === "ollama"
-        ? new OllamaBrainDumpParser({ baseUrl: env.OLLAMA_BASE_URL, model: env.OLLAMA_MODEL, timeoutMs: env.BRAIN_DUMP_TIMEOUT_MS })
+        ? new OllamaBrainDumpParser({
+            baseUrl: env.OLLAMA_BASE_URL,
+            model: env.OLLAMA_MODEL,
+            timeoutMs: env.BRAIN_DUMP_TIMEOUT_MS,
+            apiKey: env.OLLAMA_API_KEY,
+          })
         : new MockBrainDumpParser();
     const parsedAssignments = await parser.parse(input);
     const row = assertDb(await supabase.from("brain_dumps").insert({

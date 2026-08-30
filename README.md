@@ -34,6 +34,8 @@ ollama serve
 
 Set `BRAIN_DUMP_PARSER=ollama`, `OLLAMA_BASE_URL=http://127.0.0.1:11434`, and `OLLAMA_MODEL=qwen3.5:4b` (the values already shown in `.env.example`). The Next.js server performs a short `/api/tags` health/model check and calls Ollama's native `/api/chat` endpoint with a strict JSON Schema. Browser code never contacts Ollama.
 
+For a deployed backend, Ollama Cloud can be used without an always-on local machine. Set `OLLAMA_BASE_URL=https://ollama.com`, `OLLAMA_API_KEY` to a server-side Ollama API key, and `OLLAMA_MODEL` to a model available to the account (for example `gpt-oss:20b`). The key is sent only as a bearer token from the backend to Ollama.
+
 OpenAI remains optional: set `BRAIN_DUMP_PARSER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL` only when that hosted provider is desired. Use `mock` for deterministic development or automated tests.
 
 ## Verification
@@ -82,4 +84,4 @@ Calendar import uses `multipart/form-data` with an `.ics` field named `file`; op
 
 ## Deployment
 
-Create the Supabase project, apply `supabase/migrations`, configure the environment variables in Vercel, and deploy the Next.js project. A Vercel deployment cannot reach Ollama running on a developer's loopback address; production must point `OLLAMA_BASE_URL` at a private server-reachable Ollama deployment or select optional OpenAI. Never expose Ollama directly to browser code, and do not expose `OPENAI_API_KEY` or the service-role key. The current in-memory parser rate limiter is process-local; production deployments requiring a globally strict quota should replace it with a shared Redis/KV limiter.
+Create the Supabase project, apply `supabase/migrations`, configure the environment variables in Vercel, and deploy the Next.js project. A Vercel deployment cannot reach Ollama running on a developer's loopback address; production must use authenticated Ollama Cloud, point `OLLAMA_BASE_URL` at a private server-reachable Ollama deployment, or select optional OpenAI. Never expose Ollama directly to browser code, and do not expose `OLLAMA_API_KEY`, `OPENAI_API_KEY`, or the service-role key. The current in-memory parser rate limiter is process-local; production deployments requiring a globally strict quota should replace it with a shared Redis/KV limiter.
