@@ -639,9 +639,9 @@ export function CalendarView() {
           <DialogHeader>
             <DialogTitle>Import calendar</DialogTitle>
             <DialogDescription>
-              Choose your .ics file. Events named EC STUDY TIME, SCHOOL STUDY
-              BLOCK, or SCHOOL STGUDY BLOCK become planning windows
-              automatically. Breaks and other events stay busy.
+              Choose your .ics file. Events named EC STUDY TIME or SCHOOL
+              STUDY BLOCK become planning windows automatically. Breaks and
+              other events stay busy.
             </DialogDescription>
           </DialogHeader>
           <div className="mt-5 space-y-4">
