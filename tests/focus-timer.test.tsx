@@ -8,7 +8,7 @@ const assignment = {
   activityLabel: null,
   title: "Physics homework",
   dueAt: null,
-  estimatedMinutes: 25,
+  estimatedMinutes: 59,
   priority: "medium" as const,
   taskType: "assignment" as const,
   dependencyIds: [],
@@ -46,12 +46,23 @@ vi.mock("@/lib/api-client", () => ({
 }));
 import { FocusTimer } from "@/features/focus/focus-timer";
 describe("FocusTimer", () => {
-  it("starts, pauses, and resumes through persisted focus transitions", async () => {
+  it("uses the selected task estimate and persists focus transitions", async () => {
     const user = userEvent.setup();
     render(<FocusTimer />);
     const start = await screen.findByRole("button", { name: "Start" });
+    expect(screen.getByLabelText("No timer duration")).toHaveTextContent("--:--");
+    expect(start).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText("Focus task"), assignment.id);
+    expect(screen.getByLabelText("59 minutes remaining")).toHaveTextContent("59:00");
     await waitFor(() => expect(start).toBeEnabled());
     await user.click(start);
+    const { api } = await import("@/lib/api-client");
+    expect(api.createFocusSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assignmentId: assignment.id,
+        plannedDurationMinutes: 59,
+      }),
+    );
     expect(
       await screen.findByRole("button", { name: "Pause" }),
     ).toBeInTheDocument();

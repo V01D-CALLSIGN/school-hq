@@ -15,8 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/lib/api-client";
 import type { Assignment, FocusSession } from "@/types/api";
-const STORAGE_KEY = "school-hq-focus-session-v2",
-  DEFAULT_MINUTES = 25;
+const STORAGE_KEY = "school-hq-focus-session-v2";
 type LocalSession = FocusSession & { localPausedRemainingSeconds?: number };
 export function FocusTimer() {
   const [session, setSession] = useState<LocalSession | null>(null);
@@ -34,7 +33,9 @@ export function FocusTimer() {
         setTasks(open);
         setSession(active);
         setTask(
-          open.find((item) => item.id === active?.assignmentId) ?? open[0] ?? null,
+          active
+            ? items.find((item) => item.id === active.assignmentId) ?? null
+            : null,
         );
       })
       .catch((reason: Error) => toast.error(reason.message))
@@ -51,8 +52,9 @@ export function FocusTimer() {
     const id = window.setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(id);
   }, [session?.status]);
-  const totalSeconds =
-    (session?.plannedDurationMinutes ?? DEFAULT_MINUTES) * 60;
+  const targetMinutes =
+    session?.plannedDurationMinutes ?? task?.estimatedMinutes ?? null;
+  const totalSeconds = (targetMinutes ?? 0) * 60;
   const remainingSeconds = Math.max(
     0,
     useMemo(() => {
@@ -72,8 +74,10 @@ export function FocusTimer() {
       );
     }, [now, session, totalSeconds]),
   );
-  const progress = 1 - remainingSeconds / totalSeconds;
-  const display = `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")}`;
+  const progress = totalSeconds > 0 ? 1 - remainingSeconds / totalSeconds : 0;
+  const display = targetMinutes
+    ? `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")}`
+    : "--:--";
   // The transition reads the latest persisted session snapshot.
   useEffect(() => {
     if (session?.status === "running" && remainingSeconds === 0)
@@ -81,6 +85,7 @@ export function FocusTimer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remainingSeconds, session?.status]);
   async function start() {
+    if (!task) return;
     setBusy(true);
     try {
       if (session?.status === "paused") {
@@ -88,8 +93,8 @@ export function FocusTimer() {
         return;
       }
       const created = await api.createFocusSession({
-        assignmentId: task?.id ?? null,
-        plannedDurationMinutes: DEFAULT_MINUTES,
+        assignmentId: task.id,
+        plannedDurationMinutes: task.estimatedMinutes,
         startedAt: new Date().toISOString(),
       });
       setSession(created);
@@ -236,7 +241,11 @@ export function FocusTimer() {
               <div>
                 <p
                   aria-live="off"
-                  aria-label={`${Math.ceil(remainingSeconds / 60)} minutes remaining`}
+                  aria-label={
+                    targetMinutes
+                      ? `${Math.ceil(remainingSeconds / 60)} minutes remaining`
+                      : "No timer duration"
+                  }
                   className="font-mono text-6xl font-semibold tracking-[-.08em] tabular-nums sm:text-7xl"
                 >
                   {display}
@@ -260,7 +269,12 @@ export function FocusTimer() {
                   Pause
                 </Button>
               ) : status === "completed" || status === "cancelled" ? (
-                <Button onClick={() => setSession(null)}>
+                <Button
+                  onClick={() => {
+                    setSession(null);
+                    setTask(null);
+                  }}
+                >
                   <RotateCcw size={18} />
                   Start another
                 </Button>
@@ -308,7 +322,9 @@ export function FocusTimer() {
               <dl className="mt-4 space-y-4 text-sm">
                 <div className="flex justify-between">
                   <dt className="text-muted">Target</dt>
-                  <dd className="font-mono">{DEFAULT_MINUTES}m</dd>
+                  <dd className="font-mono">
+                    {targetMinutes ? `${targetMinutes}m` : "—"}
+                  </dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted">Started</dt>
